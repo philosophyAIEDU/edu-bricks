@@ -10,6 +10,9 @@
     "lint": "next lint",
     "netlify:build": "npm run build",
     "netlify:dev": "netlify dev",
+    "cf:build": "next build",
+    "cf:deploy": "wrangler pages deploy out",
+    "cf:dev": "wrangler pages dev out --compatibility-date=2024-01-01",
     "test:integration": "node tests/e2b-integration.test.js",
     "test:api": "node tests/api-endpoints.test.js",
     "test:code": "node tests/code-execution.test.js",
@@ -46,6 +49,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241218.0",
     "@eslint/eslintrc": "^3",
     "@netlify/plugin-nextjs": "^5.7.2",
     "@tailwindcss/postcss": "^4.1.11",
@@ -56,6 +60,7 @@
     "eslint-config-next": "15.4.3",
     "netlify-cli": "^17.36.4",
     "tailwindcss": "^4.1.11",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wrangler": "^3.92.0"
   }
 }

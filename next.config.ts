@@ -11,8 +11,22 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ['lucide-react', 'react-icons']
   },
-  // Netlify deployment optimizations
+  // Cloudflare Pages optimizations
   trailingSlash: false,
+  output: 'export',
+  distDir: 'out',
+  images: {
+    unoptimized: true
+  },
+  // API routes will be handled by Cloudflare Workers
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: '/api/:path*',
+      },
+    ];
+  },
 }
 
 export default nextConfig;

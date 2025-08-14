@@ -1,0 +1,50 @@
+name = "edu-bricks"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[env.production]
+name = "edu-bricks-prod"
+
+[env.staging]
+name = "edu-bricks-staging"
+
+# Environment variables (set via wrangler secret put)
+# GEMINI_API_KEY
+# E2B_API_KEY
+
+# Pages integration
+pages_build_output_dir = ".next"
+
+# Workers configuration
+[build]
+command = "npm run build"
+
+# Custom domains (configure after deployment)
+# routes = [
+#   { pattern = "edu-bricks.com/*", zone_name = "edu-bricks.com" }
+# ]
+
+# Durable Objects (if needed for state management)
+# [[durable_objects.bindings]]
+# name = "SANDBOX_STATE"
+# class_name = "SandboxState"
+
+# KV namespaces (for caching)
+[[kv_namespaces]]
+binding = "CACHE"
+id = "your-kv-namespace-id"
+preview_id = "your-preview-kv-namespace-id"
+
+# R2 buckets (for file storage if needed)
+# [[r2_buckets]]
+# binding = "FILES"
+# bucket_name = "edu-bricks-files"
+
+# Analytics Engine (for monitoring)
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+
+# Limits
+[limits]
+cpu_ms = 30000  # 30 seconds for paid plans

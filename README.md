@@ -35,7 +35,27 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ## Deployment
 
-### Netlify (Recommended)
+### Cloudflare Pages + Workers (Recommended for Production)
+1. **Install Wrangler CLI**: `npm install -g wrangler`
+2. **Login to Cloudflare**: `wrangler login`
+3. **Create KV namespace**: `wrangler kv:namespace create "CACHE"`
+4. **Set environment variables**:
+   ```bash
+   wrangler secret put GEMINI_API_KEY
+   wrangler secret put E2B_API_KEY
+   ```
+5. **Deploy**:
+   ```bash
+   npm run cf:build
+   npm run cf:deploy
+   ```
+6. **Benefits**: 
+   - 30-second function timeout (vs 10s on free plans)
+   - Global CDN with edge computing
+   - Better performance and reliability
+   - Cost: ~$5-20/month depending on usage
+
+### Netlify (Free Option)
 1. Connect your GitHub repository to Netlify
 2. Build settings are automatically configured via `netlify.toml`
 3. **Important**: Add environment variables in Netlify dashboard (Site settings → Environment variables):
@@ -43,7 +63,7 @@ Open [http://localhost:3000](http://localhost:3000)
    - `E2B_API_KEY=your_e2b_api_key` (optional - demo mode works without this)
 4. Without environment variables, the site runs in demo mode with limited functionality
 
-### Vercel
+### Vercel (Alternative)
 1. Connect your GitHub repository to Vercel
 2. Add environment variables in Vercel dashboard
 3. Deploy automatically on push to main branch
