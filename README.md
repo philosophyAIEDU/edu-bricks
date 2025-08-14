@@ -33,6 +33,21 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000)  
 
+## Deployment
+
+### Netlify (Recommended)
+1. Connect your GitHub repository to Netlify
+2. Set build command: `npm run build`
+3. Set publish directory: `.next`
+4. Add environment variables in Netlify dashboard:
+   - `GEMINI_API_KEY=your_gemini_api_key`
+   - `E2B_API_KEY=your_e2b_api_key` (optional for demo mode)
+
+### Vercel
+1. Connect your GitHub repository to Vercel
+2. Add environment variables in Vercel dashboard
+3. Deploy automatically on push to main branch
+
 ## License
 
 MIT

@@ -1,0 +1,91 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "18"
+  NPM_FLAGS = "--prefix=/opt/buildhome/.nodejs/node_global"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[functions]
+  directory = "netlify/functions"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type, Authorization"
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Handle client-side routing
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+  conditions = {Role = ["admin"], Country = ["!US"]}
+
+# API routes redirects
+[[redirects]]
+  from = "/api/create-ai-sandbox"
+  to = "/.netlify/functions/create-ai-sandbox"
+  status = 200
+
+[[redirects]]
+  from = "/api/generate-ai-code-stream"
+  to = "/.netlify/functions/generate-ai-code-stream"
+  status = 200
+
+[[redirects]]
+  from = "/api/apply-ai-code-stream"
+  to = "/.netlify/functions/apply-ai-code-stream"
+  status = 200
+
+[[redirects]]
+  from = "/api/restart-vite"
+  to = "/.netlify/functions/restart-vite"
+  status = 200
+
+[[redirects]]
+  from = "/api/conversation-state"
+  to = "/.netlify/functions/conversation-state"
+  status = 200
+
+[[redirects]]
+  from = "/api/sandbox-status"
+  to = "/.netlify/functions/sandbox-status"
+  status = 200
+
+[[redirects]]
+  from = "/api/get-sandbox-files"
+  to = "/.netlify/functions/get-sandbox-files"
+  status = 200
+
+[[redirects]]
+  from = "/api/run-command"
+  to = "/.netlify/functions/run-command"
+  status = 200
+
+[[redirects]]
+  from = "/api/install-packages"
+  to = "/.netlify/functions/install-packages"
+  status = 200
+
+[[redirects]]
+  from = "/api/kill-sandbox"
+  to = "/.netlify/functions/kill-sandbox"
+  status = 200
