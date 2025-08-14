@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Sandbox } from '@e2b/code-interpreter';
 import type { SandboxState } from '@/types/sandbox';
 import type { ConversationState } from '@/types/conversation';
+import { safeParseJSON, createErrorResponse, createSuccessResponse, ErrorResponses, logApiError, validateRequiredParams, withErrorHandling } from '@/lib/api-error-handler';
+import { validateE2BApiKey } from '@/lib/env-validation';
 
 declare global {
   var conversationState: ConversationState | null;
@@ -259,14 +261,20 @@ function parseAIResponse(response: string): ParsedResponse {
   return sections;
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withErrorHandling(async function POST(request: NextRequest) {
   try {
-    const { response, isEdit = false, packages = [], sandboxId } = await request.json();
+    // Safe JSON parsing with proper error handling
+    const parseResult = await safeParseJSON(request, {});
+    if (!parseResult.success) {
+      return parseResult.error;
+    }
     
-    if (!response) {
-      return NextResponse.json({
-        error: 'response is required'
-      }, { status: 400 });
+    const { response, isEdit = false, packages = [], sandboxId } = parseResult.data;
+    
+    // Validate required parameters
+    const validation = validateRequiredParams(parseResult.data, ['response']);
+    if (!validation.valid) {
+      return validation.error;
     }
     
     // Debug log the response
@@ -302,6 +310,13 @@ export async function POST(request: NextRequest) {
     if (!sandbox && sandboxId) {
       console.log(`[apply-ai-code-stream] Sandbox ${sandboxId} not in this instance, attempting reconnect...`);
       
+      // Validate E2B API key before attempting reconnection
+      const keyValidation = validateE2BApiKey();
+      if (!keyValidation.valid) {
+        logApiError('apply-ai-code-stream', keyValidation.error, { step: 'sandbox-reconnect-validation', sandboxId });
+        return ErrorResponses.missingEnvVar('E2B_API_KEY');
+      }
+      
       try {
         // Reconnect to the existing sandbox using E2B's connect method
         sandbox = await Sandbox.connect(sandboxId, { apiKey: process.env.E2B_API_KEY });
@@ -324,43 +339,26 @@ export async function POST(request: NextRequest) {
           global.existingFiles = new Set<string>();
         }
       } catch (reconnectError) {
-        console.error(`[apply-ai-code-stream] Failed to reconnect to sandbox ${sandboxId}:`, reconnectError);
+        logApiError('apply-ai-code-stream', reconnectError, { step: 'sandbox-reconnection', sandboxId });
         
-        // If reconnection fails, we'll still try to return a meaningful response
-        return NextResponse.json({
-          success: false,
-          error: `Failed to reconnect to sandbox ${sandboxId}. The sandbox may have expired or been terminated.`,
-          results: {
-            filesCreated: [],
-            packagesInstalled: [],
-            commandsExecuted: [],
-            errors: [`Sandbox reconnection failed: ${(reconnectError as Error).message}`]
-          },
-          explanation: parsed.explanation,
-          structure: parsed.structure,
-          parsedFiles: parsed.files,
-          message: `Parsed ${parsed.files.length} files but couldn't apply them - sandbox reconnection failed.`
-        });
+        return createErrorResponse(
+          `Failed to reconnect to sandbox ${sandboxId}. The sandbox may have expired or been terminated.`,
+          503,
+          'SANDBOX_RECONNECTION_FAILED',
+          {
+            sandboxId,
+            originalError: reconnectError instanceof Error ? reconnectError.message : String(reconnectError),
+            parsedFiles: parsed.files.length,
+            suggestion: 'Please create a new sandbox and try again.'
+          }
+        );
       }
     }
     
     // If no sandbox at all and no sandboxId provided, return an error
     if (!sandbox && !sandboxId) {
       console.log('[apply-ai-code-stream] No sandbox available and no sandboxId provided');
-      return NextResponse.json({
-        success: false,
-        error: 'No active sandbox found. Please create a sandbox first.',
-        results: {
-          filesCreated: [],
-          packagesInstalled: [],
-          commandsExecuted: [],
-          errors: ['No sandbox available']
-        },
-        explanation: parsed.explanation,
-        structure: parsed.structure,
-        parsedFiles: parsed.files,
-        message: `Parsed ${parsed.files.length} files but no sandbox available to apply them.`
-      });
+      return ErrorResponses.sandboxNotFound();
     }
     
     // Create a response stream for real-time updates
@@ -368,10 +366,15 @@ export async function POST(request: NextRequest) {
     const stream = new TransformStream();
     const writer = stream.writable.getWriter();
     
-    // Function to send progress updates
+    // Function to send progress updates with error handling
     const sendProgress = async (data: any) => {
-      const message = `data: ${JSON.stringify(data)}\n\n`;
-      await writer.write(encoder.encode(message));
+      try {
+        const message = `data: ${JSON.stringify(data)}\n\n`;
+        await writer.write(encoder.encode(message));
+      } catch (writeError) {
+        console.error('[apply-ai-code-stream] Error writing to stream:', writeError);
+        // Don't throw here to avoid breaking the stream
+      }
     };
     
     // Start processing in background (pass sandbox and request to the async function)
@@ -420,12 +423,16 @@ export async function POST(request: NextRequest) {
             packages: uniquePackages
           });
           
-          // Use streaming package installation
+          // Use streaming package installation with timeout
           try {
             // Construct the API URL properly for both dev and production
             const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
             const host = req.headers.get('host') || 'localhost:3000';
             const apiUrl = `${protocol}://${host}/api/install-packages`;
+            
+            // Create an AbortController for timeout
+            const abortController = new AbortController();
+            const timeoutId = setTimeout(() => abortController.abort(), 120000); // 2 minute timeout
             
             const installResponse = await fetch(apiUrl, {
               method: 'POST',
@@ -433,8 +440,11 @@ export async function POST(request: NextRequest) {
               body: JSON.stringify({ 
                 packages: uniquePackages,
                 sandboxId: sandboxId || (sandboxInstance as any).sandboxId
-              })
+              }),
+              signal: abortController.signal
             });
+            
+            clearTimeout(timeoutId);
             
             if (installResponse.ok && installResponse.body) {
               const reader = installResponse.body.getReader();
@@ -534,19 +544,37 @@ export async function POST(request: NextRequest) {
               fileContent = fileContent.replace(/import\s+['"]\.\/[^'"]+\.css['"];?\s*\n?/g, '');
             }
             
-            // Write the file using Python (code-interpreter SDK)
+            // Write the file using Python (code-interpreter SDK) with error handling
             const escapedContent = fileContent
               .replace(/\\/g, '\\\\')
               .replace(/"""/g, '\\"\\"\\"')
               .replace(/\$/g, '\\$');
             
-            await sandboxInstance.runCode(`
+            try {
+              await sandboxInstance.runCode(`
 import os
-os.makedirs(os.path.dirname("${fullPath}"), exist_ok=True)
-with open("${fullPath}", 'w') as f:
-    f.write("""${escapedContent}""")
-print(f"File written: ${fullPath}")
-            `);
+try:
+    os.makedirs(os.path.dirname("${fullPath}"), exist_ok=True)
+    with open("${fullPath}", 'w', encoding='utf-8') as f:
+        f.write("""${escapedContent}""")
+    print(f"✓ File written successfully: ${fullPath}")
+except Exception as e:
+    print(f"✗ Error writing file ${fullPath}: {str(e)}")
+    raise e
+              `);
+            } catch (writeError) {
+              logApiError('apply-ai-code-stream', writeError, { step: 'file-write', filePath: fullPath });
+              
+              if (results.errors) {
+                results.errors.push(`Failed to write ${normalizedPath}: ${writeError instanceof Error ? writeError.message : 'Unknown error'}`);
+              }
+              await sendProgress({
+                type: 'file-error',
+                fileName: normalizedPath,
+                error: writeError instanceof Error ? writeError.message : 'Unknown error'
+              });
+              continue; // Skip to next file
+            }
             
             // Update file cache
             if (global.sandboxState?.fileCache) {
@@ -679,12 +707,19 @@ print(f"File written: ${fullPath}")
         }
         
       } catch (error) {
+        logApiError('apply-ai-code-stream', error, { step: 'stream-processing' });
+        
         await sendProgress({
           type: 'error',
-          error: (error as Error).message
+          error: error instanceof Error ? error.message : 'An unexpected error occurred during code application',
+          errorCode: 'APPLICATION_FAILED'
         });
       } finally {
-        await writer.close();
+        try {
+          await writer.close();
+        } catch (closeError) {
+          console.error('[apply-ai-code-stream] Error closing writer:', closeError);
+        }
       }
     })(sandbox, request);
     
@@ -698,10 +733,12 @@ print(f"File written: ${fullPath}")
     });
     
   } catch (error) {
-    console.error('Apply AI code stream error:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to parse AI code' },
-      { status: 500 }
+    logApiError('apply-ai-code-stream', error, { step: 'initialization' });
+    
+    return createErrorResponse(
+      error instanceof Error ? error.message : 'Failed to initialize code application stream',
+      500,
+      'STREAM_INITIALIZATION_FAILED'
     );
   }
-}
+});

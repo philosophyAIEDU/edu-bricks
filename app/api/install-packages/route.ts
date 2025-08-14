@@ -1,20 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Sandbox } from '@e2b/code-interpreter';
+import { safeParseJSON, createErrorResponse, createSuccessResponse, ErrorResponses, logApiError, validateRequiredParams, withErrorHandling } from '@/lib/api-error-handler';
+import { validateE2BApiKey } from '@/lib/env-validation';
+import { appConfig } from '@/config/app.config';
 
 declare global {
   var activeSandbox: any;
   var sandboxData: any;
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withErrorHandling(async function POST(request: NextRequest) {
   try {
-    const { packages, sandboxId } = await request.json();
+    // Safe JSON parsing with proper error handling
+    const parseResult = await safeParseJSON(request, {});
+    if (!parseResult.success) {
+      return parseResult.error;
+    }
     
-    if (!packages || !Array.isArray(packages) || packages.length === 0) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Packages array is required' 
-      }, { status: 400 });
+    const { packages, sandboxId } = parseResult.data;
+    
+    // Validate required parameters
+    const validation = validateRequiredParams(parseResult.data, ['packages']);
+    if (!validation.valid) {
+      return validation.error;
+    }
+    
+    // Validate packages array format
+    if (!Array.isArray(packages) || packages.length === 0) {
+      return createErrorResponse(
+        'Packages must be a non-empty array',
+        400,
+        'INVALID_PACKAGES_FORMAT',
+        { packages }
+      );
     }
     
     // Validate and deduplicate package names
@@ -23,10 +41,12 @@ export async function POST(request: NextRequest) {
       .map(pkg => pkg.trim());
     
     if (validPackages.length === 0) {
-      return NextResponse.json({
-        success: false,
-        error: 'No valid package names provided'
-      }, { status: 400 });
+      return createErrorResponse(
+        'No valid package names provided',
+        400,
+        'NO_VALID_PACKAGES',
+        { originalPackages: packages }
+      );
     }
     
     // Log if duplicates were found
@@ -41,24 +61,29 @@ export async function POST(request: NextRequest) {
     
     if (!sandbox && sandboxId) {
       console.log(`[install-packages] Reconnecting to sandbox ${sandboxId}...`);
+      
+      // Validate E2B API key before attempting reconnection
+      const keyValidation = validateE2BApiKey();
+      if (!keyValidation.valid) {
+        logApiError('install-packages', keyValidation.error, { step: 'sandbox-reconnect-validation', sandboxId });
+        return ErrorResponses.missingEnvVar('E2B_API_KEY');
+      }
+      
       try {
         sandbox = await Sandbox.connect(sandboxId, { apiKey: process.env.E2B_API_KEY });
         global.activeSandbox = sandbox;
         console.log(`[install-packages] Successfully reconnected to sandbox ${sandboxId}`);
       } catch (error) {
-        console.error(`[install-packages] Failed to reconnect to sandbox:`, error);
-        return NextResponse.json({ 
-          success: false, 
-          error: `Failed to reconnect to sandbox: ${(error as Error).message}` 
-        }, { status: 500 });
+        logApiError('install-packages', error, { step: 'sandbox-reconnection', sandboxId });
+        return ErrorResponses.sandboxReconnectionFailed(
+          sandboxId, 
+          error instanceof Error ? error.message : 'Unknown error'
+        );
       }
     }
     
     if (!sandbox) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'No active sandbox available' 
-      }, { status: 400 });
+      return ErrorResponses.sandboxNotFound(sandboxId);
     }
     
     console.log('[install-packages] Installing packages:', packages);
@@ -68,10 +93,15 @@ export async function POST(request: NextRequest) {
     const stream = new TransformStream();
     const writer = stream.writable.getWriter();
     
-    // Function to send progress updates
+    // Function to send progress updates with error handling
     const sendProgress = async (data: any) => {
-      const message = `data: ${JSON.stringify(data)}\n\n`;
-      await writer.write(encoder.encode(message));
+      try {
+        const message = `data: ${JSON.stringify(data)}\n\n`;
+        await writer.write(encoder.encode(message));
+      } catch (writeError) {
+        console.error('[install-packages] Error writing to stream:', writeError);
+        // Don't throw here to avoid breaking the stream
+      }
     };
     
     // Start installation in background
@@ -189,60 +219,104 @@ except Exception as e:
           message: `Installing ${packagesToInstall.length} new package(s): ${packagesToInstall.join(', ')}`
         });
         
-        const installResult = await sandboxInstance.runCode(`
+        let installResult;
+        try {
+          installResult = await sandboxInstance.runCode(`
 import subprocess
 import os
+import signal
+import time
 
 os.chdir('/home/user/app')
 
-# Run npm install with output capture
-packages_to_install = ${JSON.stringify(packagesToInstall)}
-cmd_args = ['npm', 'install', '--legacy-peer-deps'] + packages_to_install
+# Set up timeout handler
+def timeout_handler(signum, frame):
+    raise TimeoutError("npm install timeout after 60 seconds")
 
-print(f"Running command: {' '.join(cmd_args)}")
+signal.signal(signal.SIGALRM, timeout_handler)
+signal.alarm(60)  # 60 second timeout
 
-process = subprocess.Popen(
-    cmd_args,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE,
-    text=True
-)
+try:
+    # Run npm install with output capture
+    packages_to_install = ${JSON.stringify(packagesToInstall)}
+    cmd_args = ['npm', 'install', '--legacy-peer-deps'] + packages_to_install
 
-# Stream output
-while True:
-    output = process.stdout.readline()
-    if output == '' and process.poll() is not None:
-        break
-    if output:
-        print(output.strip())
+    print(f"Running command: {' '.join(cmd_args)}")
 
-# Get the return code
-rc = process.poll()
+    process = subprocess.Popen(
+        cmd_args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
 
-# Capture any stderr
-stderr = process.stderr.read()
-if stderr:
-    print("STDERR:", stderr)
-    if 'ERESOLVE' in stderr:
-        print("ERESOLVE_ERROR: Dependency conflict detected - using --legacy-peer-deps flag")
+    # Stream output with timeout
+    start_time = time.time()
+    while True:
+        if time.time() - start_time > 60:
+            process.kill()
+            raise TimeoutError("npm install exceeded 60 second timeout")
+            
+        output = process.stdout.readline()
+        if output == '' and process.poll() is not None:
+            break
+        if output:
+            print(output.strip())
 
-print(f"\\nInstallation completed with code: {rc}")
+    # Get the return code
+    rc = process.poll()
 
-# Verify packages were installed
-import json
-with open('/home/user/app/package.json', 'r') as f:
-    package_json = json.load(f)
-    
-installed = []
-for pkg in ${JSON.stringify(packagesToInstall)}:
-    if pkg in package_json.get('dependencies', {}):
-        installed.append(pkg)
-        print(f"✓ Verified {pkg}")
-    else:
-        print(f"✗ Package {pkg} not found in dependencies")
+    # Capture any stderr
+    stderr = process.stderr.read()
+    if stderr:
+        print("STDERR:", stderr)
+        if 'ERESOLVE' in stderr:
+            print("ERESOLVE_ERROR: Dependency conflict detected - using --legacy-peer-deps flag")
+
+    print(f"\\nInstallation completed with code: {rc}")
+
+    # Verify packages were installed
+    import json
+    try:
+        with open('/home/user/app/package.json', 'r') as f:
+            package_json = json.load(f)
         
-print(f"\\nVerified installed packages: {installed}")
-        `, { timeout: 60000 }); // 60 second timeout for npm install
+        installed = []
+        failed = []
+        for pkg in packages_to_install:
+            if pkg in package_json.get('dependencies', {}) or pkg in package_json.get('devDependencies', {}):
+                installed.append(pkg)
+                print(f"✓ Verified {pkg}")
+            else:
+                failed.append(pkg)
+                print(f"✗ Package {pkg} not found in dependencies")
+        
+        print(f"\\nVerified installed packages: {installed}")
+        print(f"Failed packages: {failed}")
+        print(f"INSTALL_STATUS:SUCCESS:{rc}")
+    except Exception as verify_error:
+        print(f"Error verifying installation: {verify_error}")
+        print(f"INSTALL_STATUS:VERIFY_ERROR:{rc}")
+
+except TimeoutError as e:
+    print(f"INSTALL_STATUS:TIMEOUT:{str(e)}")
+    raise e
+except Exception as e:
+    print(f"INSTALL_STATUS:ERROR:{str(e)}")
+    raise e
+finally:
+    signal.alarm(0)  # Clear alarm
+        `, { timeout: appConfig.packages.installTimeout }); // Use config timeout
+        } catch (installError) {
+          logApiError('install-packages', installError, { step: 'npm-install', packages: packagesToInstall });
+          
+          await sendProgress({ 
+            type: 'error', 
+            message: `npm install failed: ${installError instanceof Error ? installError.message : 'Unknown error'}`,
+            packages: packagesToInstall
+          });
+          return;
+        }
         
         // Send npm output
         const output = installResult?.output || installResult?.logs?.stdout?.join('\n') || '';
@@ -338,15 +412,20 @@ print("Vite restarted and should now recognize all packages")
         });
         
       } catch (error) {
-        const errorMessage = (error as Error).message;
-        if (errorMessage && errorMessage !== 'undefined') {
-          await sendProgress({ 
-            type: 'error', 
-            message: errorMessage
-          });
-        }
+        logApiError('install-packages', error, { step: 'stream-processing' });
+        
+        const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred during package installation';
+        await sendProgress({ 
+          type: 'error', 
+          message: errorMessage,
+          errorCode: 'PACKAGE_INSTALL_ERROR'
+        });
       } finally {
-        await writer.close();
+        try {
+          await writer.close();
+        } catch (closeError) {
+          console.error('[install-packages] Error closing writer:', closeError);
+        }
       }
     })(sandbox);
     
@@ -360,10 +439,12 @@ print("Vite restarted and should now recognize all packages")
     });
     
   } catch (error) {
-    console.error('[install-packages] Error:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: (error as Error).message 
-    }, { status: 500 });
+    logApiError('install-packages', error, { step: 'initialization' });
+    
+    return createErrorResponse(
+      error instanceof Error ? error.message : 'Failed to initialize package installation stream',
+      500,
+      'STREAM_INITIALIZATION_FAILED'
+    );
   }
-}
+});

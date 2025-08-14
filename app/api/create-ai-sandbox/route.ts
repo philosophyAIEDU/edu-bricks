@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { Sandbox } from '@e2b/code-interpreter';
 import type { SandboxState } from '@/types/sandbox';
 import { appConfig } from '@/config/app.config';
+import { validateE2BApiKey } from '@/lib/env-validation';
+import { createErrorResponse, createSuccessResponse, ErrorResponses, logApiError, withErrorHandling } from '@/lib/api-error-handler';
 
 // Store active sandbox globally
 declare global {
@@ -11,10 +13,17 @@ declare global {
   var sandboxState: SandboxState;
 }
 
-export async function POST() {
+export const POST = withErrorHandling(async function POST() {
   let sandbox: any = null;
 
   try {
+    // Validate E2B API key using centralized validation
+    const keyValidation = validateE2BApiKey();
+    if (!keyValidation.valid) {
+      logApiError('create-ai-sandbox', keyValidation.error, { step: 'api-key-validation' });
+      return ErrorResponses.missingEnvVar('E2B_API_KEY');
+    }
+
     console.log('[create-ai-sandbox] Creating base sandbox...');
     
     // Kill existing sandbox if any
@@ -37,10 +46,18 @@ export async function POST() {
 
     // Create base sandbox - we'll set up Vite ourselves for full control
     console.log(`[create-ai-sandbox] Creating base E2B sandbox with ${appConfig.e2b.timeoutMinutes} minute timeout...`);
-    sandbox = await Sandbox.create({ 
-      apiKey: process.env.E2B_API_KEY,
-      timeoutMs: appConfig.e2b.timeoutMs
-    });
+    
+    try {
+      sandbox = await Sandbox.create({ 
+        apiKey: process.env.E2B_API_KEY,
+        timeoutMs: appConfig.e2b.timeoutMs
+      });
+    } catch (sandboxError) {
+      logApiError('create-ai-sandbox', sandboxError, { step: 'sandbox-creation' });
+      return ErrorResponses.sandboxCreationFailed(
+        sandboxError instanceof Error ? sandboxError.message : 'Unknown sandbox creation error'
+      );
+    }
     
     const sandboxId = (sandbox as any).sandboxId || Date.now().toString();
     const host = (sandbox as any).getHost(appConfig.e2b.vitePort);
@@ -226,11 +243,28 @@ print('\\nAll files created successfully!')
 `;
 
     // Execute the setup script
-    await sandbox.runCode(setupScript);
+    try {
+      console.log('[create-ai-sandbox] Executing setup script...');
+      await sandbox.runCode(setupScript);
+    } catch (setupError) {
+      logApiError('create-ai-sandbox', setupError, { step: 'setup-script' });
+      // Try to kill sandbox on setup failure
+      try {
+        await sandbox.kill();
+      } catch (killError) {
+        console.error('[create-ai-sandbox] Failed to cleanup sandbox after setup error:', killError);
+      }
+      return createErrorResponse(
+        `Failed to set up Vite React application: ${setupError instanceof Error ? setupError.message : 'Unknown setup error'}`,
+        500,
+        'SANDBOX_SETUP_FAILED'
+      );
+    }
     
     // Install dependencies
     console.log('[create-ai-sandbox] Installing dependencies...');
-    await sandbox.runCode(`
+    try {
+      await sandbox.runCode(`
 import subprocess
 import sys
 
@@ -239,7 +273,8 @@ result = subprocess.run(
     ['npm', 'install'],
     cwd='/home/user/app',
     capture_output=True,
-    text=True
+    text=True,
+    timeout=120  # 2 minute timeout for npm install
 )
 
 if result.returncode == 0:
@@ -248,10 +283,15 @@ else:
     print(f'⚠ Warning: npm install had issues: {result.stderr}')
     # Continue anyway as it might still work
     `);
+    } catch (installError) {
+      console.warn('[create-ai-sandbox] Dependencies installation had issues, continuing anyway:', installError);
+      // Don't fail the entire process for dependency installation issues
+    }
     
     // Start Vite dev server
     console.log('[create-ai-sandbox] Starting Vite dev server...');
-    await sandbox.runCode(`
+    try {
+      await sandbox.runCode(`
 import subprocess
 import os
 import time
@@ -275,7 +315,11 @@ process = subprocess.Popen(
 
 print(f'✓ Vite dev server started with PID: {process.pid}')
 print('Waiting for server to be ready...')
-    `);
+      `);
+    } catch (viteError) {
+      console.warn('[create-ai-sandbox] Vite server start had issues, continuing anyway:', viteError);
+      // Don't fail for Vite startup issues - the server may still work
+    }
     
     // Wait for Vite to be fully ready
     await new Promise(resolve => setTimeout(resolve, appConfig.e2b.viteStartupDelay));
@@ -335,31 +379,35 @@ print('✓ Tailwind CSS should be loaded')
     
     console.log('[create-ai-sandbox] Sandbox ready at:', `https://${host}`);
     
-    return NextResponse.json({
-      success: true,
-      sandboxId,
-      url: `https://${host}`,
-      message: 'Sandbox created and Vite React app initialized'
-    });
+    return createSuccessResponse(
+      {
+        sandboxId,
+        url: `https://${host}`,
+        filesTracked: Array.from(global.existingFiles || []),
+        vitePort: appConfig.e2b.vitePort,
+        timeout: appConfig.e2b.timeoutMinutes
+      },
+      'Sandbox created and Vite React app initialized successfully'
+    );
 
   } catch (error) {
-    console.error('[create-ai-sandbox] Error:', error);
+    logApiError('create-ai-sandbox', error, { step: 'general-error' });
     
     // Clean up on error
     if (sandbox) {
       try {
         await sandbox.kill();
-      } catch (e) {
-        console.error('Failed to close sandbox on error:', e);
+      } catch (killError) {
+        console.error('[create-ai-sandbox] Failed to cleanup sandbox on error:', killError);
       }
     }
     
-    return NextResponse.json(
-      { 
-        error: error instanceof Error ? error.message : 'Failed to create sandbox',
-        details: error instanceof Error ? error.stack : undefined
-      },
-      { status: 500 }
+    // Return standardized error response
+    return createErrorResponse(
+      error instanceof Error ? error.message : 'Failed to create sandbox',
+      500,
+      'SANDBOX_CREATION_FAILED',
+      process.env.NODE_ENV === 'development' && error instanceof Error ? { stack: error.stack } : undefined
     );
   }
-}
+});

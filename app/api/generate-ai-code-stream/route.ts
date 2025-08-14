@@ -10,6 +10,8 @@ import { executeSearchPlan, formatSearchResultsForAI, selectTargetFile } from '@
 import { FileManifest } from '@/types/file-manifest';
 import type { ConversationState, ConversationMessage, ConversationEdit } from '@/types/conversation';
 import { appConfig } from '@/config/app.config';
+import { validateAIProviderKeys } from '@/lib/env-validation';
+import { safeParseJSON, createErrorResponse, ErrorResponses, logApiError, validateRequiredParams } from '@/lib/api-error-handler';
 
 const groq = createGroq({
   apiKey: process.env.GROQ_API_KEY,
@@ -74,7 +76,30 @@ declare global {
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, model = 'openai/gpt-oss-20b', context, isEdit = false } = await request.json();
+    // Validate AI providers are configured
+    const aiValidation = validateAIProviderKeys();
+    if (!aiValidation.valid) {
+      logApiError('generate-ai-code-stream', aiValidation.error, { availableProviders: aiValidation.availableProviders });
+      return createErrorResponse(
+        `No AI providers configured: ${aiValidation.error}`,
+        503,
+        'AI_PROVIDERS_NOT_CONFIGURED'
+      );
+    }
+
+    // Safe JSON parsing with proper error handling
+    const parseResult = await safeParseJSON(request, {});
+    if (!parseResult.success) {
+      return parseResult.error;
+    }
+    
+    const { prompt, model = 'openai/gpt-oss-20b', context, isEdit = false } = parseResult.data;
+    
+    // Validate required parameters
+    const validation = validateRequiredParams(parseResult.data, ['prompt']);
+    if (!validation.valid) {
+      return validation.error;
+    }
     
     console.log('[generate-ai-code-stream] Received request:');
     console.log('[generate-ai-code-stream] - prompt:', prompt);
@@ -130,11 +155,16 @@ export async function POST(request: NextRequest) {
         typeof firstFile[1] === 'string' ? firstFile[1].substring(0, 100) + '...' : 'not a string');
     }
     
-    if (!prompt) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Prompt is required' 
-      }, { status: 400 });
+    // Additional model validation
+    const availableModels = appConfig.ai.availableModels;
+    if (model && !availableModels.includes(model)) {
+      logApiError('generate-ai-code-stream', `Invalid model: ${model}`, { availableModels });
+      return createErrorResponse(
+        `Invalid model: ${model}. Available models: ${availableModels.join(', ')}`,
+        400,
+        'INVALID_AI_MODEL',
+        { model, availableModels }
+      );
     }
     
     // Create a stream for real-time updates
@@ -142,10 +172,15 @@ export async function POST(request: NextRequest) {
     const stream = new TransformStream();
     const writer = stream.writable.getWriter();
     
-    // Function to send progress updates
+    // Function to send progress updates with error handling
     const sendProgress = async (data: any) => {
-      const message = `data: ${JSON.stringify(data)}\n\n`;
-      await writer.write(encoder.encode(message));
+      try {
+        const message = `data: ${JSON.stringify(data)}\n\n`;
+        await writer.write(encoder.encode(message));
+      } catch (writeError) {
+        console.error('[generate-ai-code-stream] Error writing to stream:', writeError);
+        // Don't throw here to avoid breaking the stream
+      }
     };
     
     // Start processing in background
@@ -1211,7 +1246,7 @@ CRITICAL: When files are provided in the context:
                            (model === 'openai/gpt-5') ? 'gpt-5' :
                            (isGoogle ? model.replace('google/', '') : model);
 
-        // Make streaming API call with appropriate provider
+        // Prepare streaming options with timeout and error handling
         const streamOptions: any = {
           model: modelProvider(actualModel),
           messages: [
@@ -1274,10 +1309,8 @@ If you're running out of space, generate FEWER files but make them COMPLETE.
 It's better to have 3 complete files than 10 incomplete files.`
             }
           ],
-          maxTokens: 8192, // Reduce to ensure completion
-          stopSequences: [] // Don't stop early
-          // Note: Neither Groq nor Anthropic models support tool/function calling in this context
-          // We use XML tags for package detection instead
+          maxTokens: appConfig.ai.maxTokens,
+          stopSequences: []
         };
         
         // Add temperature for non-reasoning models
@@ -1294,9 +1327,22 @@ It's better to have 3 complete files than 10 incomplete files.`
           };
         }
         
-        const result = await streamText(streamOptions);
+        let result;
+        try {
+          result = await streamText(streamOptions);
+        } catch (aiError) {
+          logApiError('generate-ai-code-stream', aiError, { model, provider: isAnthropic ? 'anthropic' : (isOpenAI ? 'openai' : 'groq') });
+          
+          // Send error via stream
+          await sendProgress({ 
+            type: 'error', 
+            error: `AI service error: ${aiError instanceof Error ? aiError.message : 'Unknown AI error'}`,
+            model 
+          });
+          return;
+        }
         
-        // Stream the response and parse in real-time
+        // Stream the response and parse in real-time with timeout handling
         let generatedCode = '';
         let currentFile = '';
         let currentFilePath = '';
@@ -1304,12 +1350,26 @@ It's better to have 3 complete files than 10 incomplete files.`
         let isInFile = false;
         let isInTag = false;
         let conversationalBuffer = '';
+        let streamTimeout: NodeJS.Timeout;
         
         // Buffer for incomplete tags
         let tagBuffer = '';
         
-        // Stream the response and parse for packages in real-time
-        for await (const textPart of result.textStream) {
+        // Set up stream timeout (30 seconds)
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          streamTimeout = setTimeout(() => {
+            reject(new Error('AI streaming timeout - no response for 30 seconds'));
+          }, 30000);
+        });
+        
+        try {
+          // Stream the response and parse for packages in real-time
+          for await (const textPart of result.textStream) {
+            // Reset timeout on each chunk
+            clearTimeout(streamTimeout);
+            streamTimeout = setTimeout(() => {
+              throw new Error('AI streaming timeout - no response for 30 seconds');
+            }, 30000);
           const text = textPart || '';
           generatedCode += text;
           currentFile += text;
@@ -1413,7 +1473,30 @@ It's better to have 3 complete files than 10 incomplete files.`
           }
         }
         
+        // Clear timeout on successful completion
+        clearTimeout(streamTimeout);
+        
         console.log('\n\n[generate-ai-code-stream] Streaming complete.');
+        
+        } catch (streamError) {
+          clearTimeout(streamTimeout);
+          logApiError('generate-ai-code-stream', streamError, { step: 'stream-processing' });
+          
+          await sendProgress({ 
+            type: 'error', 
+            error: `Streaming error: ${streamError instanceof Error ? streamError.message : 'Unknown streaming error'}`
+          });
+          
+          // Try to continue with whatever we have so far
+          if (generatedCode.length > 0) {
+            await sendProgress({ 
+              type: 'warning', 
+              message: 'Stream was interrupted but some content was received. Attempting to process...'
+            });
+          } else {
+            return;
+          }
+        }
         
         // Send any remaining conversational text
         if (conversationalBuffer.trim()) {
@@ -1745,9 +1828,9 @@ Provide the complete file content without any truncation. Include all necessary 
         }
         
       } catch (error) {
-        console.error('[generate-ai-code-stream] Stream processing error:', error);
+        logApiError('generate-ai-code-stream', error, { step: 'processing' });
         
-        // Check if it's a tool validation error
+        // Check if it's a tool validation error or other recoverable errors
         if ((error as any).message?.includes('tool call validation failed')) {
           console.error('[generate-ai-code-stream] Tool call validation error - this may be due to the AI model sending incorrect parameters');
           await sendProgress({ 
@@ -1755,14 +1838,31 @@ Provide the complete file content without any truncation. Include all necessary 
             message: 'Package installation tool encountered an issue. Packages will be detected from imports instead.'
           });
           // Continue processing - packages can still be detected from the code
+        } else if ((error as any).message?.includes('timeout')) {
+          await sendProgress({ 
+            type: 'error', 
+            error: 'Request timed out. Please try again with a simpler prompt or smaller scope.',
+            errorCode: 'AI_TIMEOUT'
+          });
+        } else if ((error as any).message?.includes('rate limit') || (error as any).message?.includes('quota')) {
+          await sendProgress({ 
+            type: 'error', 
+            error: 'AI service rate limit exceeded. Please wait a moment and try again.',
+            errorCode: 'AI_RATE_LIMIT'
+          });
         } else {
           await sendProgress({ 
             type: 'error', 
-            error: (error as Error).message 
+            error: error instanceof Error ? error.message : 'An unexpected error occurred during code generation',
+            errorCode: 'AI_SERVICE_ERROR'
           });
         }
       } finally {
-        await writer.close();
+        try {
+          await writer.close();
+        } catch (closeError) {
+          console.error('[generate-ai-code-stream] Error closing writer:', closeError);
+        }
       }
     })();
     
@@ -1776,10 +1876,12 @@ Provide the complete file content without any truncation. Include all necessary 
     });
     
   } catch (error) {
-    console.error('[generate-ai-code-stream] Error:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: (error as Error).message 
-    }, { status: 500 });
+    logApiError('generate-ai-code-stream', error, { step: 'initialization' });
+    
+    return createErrorResponse(
+      error instanceof Error ? error.message : 'Failed to initialize code generation stream',
+      500,
+      'STREAM_INITIALIZATION_FAILED'
+    );
   }
 }

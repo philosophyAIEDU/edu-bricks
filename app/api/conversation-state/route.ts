@@ -1,38 +1,50 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { ConversationState } from '@/types/conversation';
+import { safeParseJSON, createErrorResponse, createSuccessResponse, ErrorResponses, logApiError, withErrorHandling } from '@/lib/api-error-handler';
 
 declare global {
   var conversationState: ConversationState | null;
 }
 
 // GET: Retrieve current conversation state
-export async function GET() {
+export const GET = withErrorHandling(async function GET() {
   try {
     if (!global.conversationState) {
-      return NextResponse.json({
-        success: true,
-        state: null,
-        message: 'No active conversation'
-      });
+      return createSuccessResponse(
+        { state: null },
+        'No active conversation'
+      );
     }
     
-    return NextResponse.json({
-      success: true,
-      state: global.conversationState
-    });
+    return createSuccessResponse(
+      { state: global.conversationState },
+      'Conversation state retrieved successfully'
+    );
   } catch (error) {
-    console.error('[conversation-state] Error getting state:', error);
-    return NextResponse.json({
-      success: false,
-      error: (error as Error).message
-    }, { status: 500 });
+    logApiError('conversation-state', error, { operation: 'GET' });
+    return createErrorResponse(
+      error instanceof Error ? error.message : 'Failed to retrieve conversation state',
+      500,
+      'CONVERSATION_STATE_READ_FAILED'
+    );
   }
-}
+});
 
 // POST: Reset or update conversation state
-export async function POST(request: NextRequest) {
+export const POST = withErrorHandling(async function POST(request: NextRequest) {
   try {
-    const { action, data } = await request.json();
+    // Safe JSON parsing with proper error handling
+    const parseResult = await safeParseJSON(request, {});
+    if (!parseResult.success) {
+      return parseResult.error;
+    }
+    
+    const { action, data } = parseResult.data;
+    
+    // Validate required action parameter
+    if (!action || typeof action !== 'string') {
+      return ErrorResponses.missingParameter('action');
+    }
     
     switch (action) {
       case 'reset':
@@ -50,19 +62,19 @@ export async function POST(request: NextRequest) {
         
         console.log('[conversation-state] Reset conversation state');
         
-        return NextResponse.json({
-          success: true,
-          message: 'Conversation state reset',
-          state: global.conversationState
-        });
+        return createSuccessResponse(
+          { state: global.conversationState },
+          'Conversation state reset successfully'
+        );
         
       case 'clear-old':
         // Clear old conversation data but keep recent context
         if (!global.conversationState) {
-          return NextResponse.json({
-            success: false,
-            error: 'No active conversation to clear'
-          }, { status: 400 });
+          return createErrorResponse(
+            'No active conversation to clear',
+            400,
+            'NO_ACTIVE_CONVERSATION'
+          );
         }
         
         // Keep only recent data
@@ -73,18 +85,18 @@ export async function POST(request: NextRequest) {
         
         console.log('[conversation-state] Cleared old conversation data');
         
-        return NextResponse.json({
-          success: true,
-          message: 'Old conversation data cleared',
-          state: global.conversationState
-        });
+        return createSuccessResponse(
+          { state: global.conversationState },
+          'Old conversation data cleared successfully'
+        );
         
       case 'update':
         if (!global.conversationState) {
-          return NextResponse.json({
-            success: false,
-            error: 'No active conversation to update'
-          }, { status: 400 });
+          return createErrorResponse(
+            'No active conversation to update',
+            400,
+            'NO_ACTIVE_CONVERSATION'
+          );
         }
         
         // Update specific fields if provided
@@ -102,43 +114,46 @@ export async function POST(request: NextRequest) {
           global.conversationState.lastUpdated = Date.now();
         }
         
-        return NextResponse.json({
-          success: true,
-          message: 'Conversation state updated',
-          state: global.conversationState
-        });
+        return createSuccessResponse(
+          { state: global.conversationState },
+          'Conversation state updated successfully'
+        );
         
       default:
-        return NextResponse.json({
-          success: false,
-          error: 'Invalid action. Use "reset" or "update"'
-        }, { status: 400 });
+        return createErrorResponse(
+          `Invalid action: ${action}. Valid actions are: reset, clear-old, update`,
+          400,
+          'INVALID_ACTION',
+          { action, validActions: ['reset', 'clear-old', 'update'] }
+        );
     }
   } catch (error) {
-    console.error('[conversation-state] Error:', error);
-    return NextResponse.json({
-      success: false,
-      error: (error as Error).message
-    }, { status: 500 });
+    logApiError('conversation-state', error, { operation: 'POST' });
+    return createErrorResponse(
+      error instanceof Error ? error.message : 'Failed to process conversation state operation',
+      500,
+      'CONVERSATION_STATE_OPERATION_FAILED'
+    );
   }
-}
+});
 
 // DELETE: Clear conversation state
-export async function DELETE() {
+export const DELETE = withErrorHandling(async function DELETE() {
   try {
     global.conversationState = null;
     
     console.log('[conversation-state] Cleared conversation state');
     
-    return NextResponse.json({
-      success: true,
-      message: 'Conversation state cleared'
-    });
+    return createSuccessResponse(
+      null,
+      'Conversation state cleared successfully'
+    );
   } catch (error) {
-    console.error('[conversation-state] Error clearing state:', error);
-    return NextResponse.json({
-      success: false,
-      error: (error as Error).message
-    }, { status: 500 });
+    logApiError('conversation-state', error, { operation: 'DELETE' });
+    return createErrorResponse(
+      error instanceof Error ? error.message : 'Failed to clear conversation state',
+      500,
+      'CONVERSATION_STATE_CLEAR_FAILED'
+    );
   }
-}
+});
