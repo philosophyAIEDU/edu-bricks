@@ -76,8 +76,30 @@ declare global {
 
 export async function POST(request: NextRequest) {
   try {
-    // Validate Gemini API key is configured
+    // Check if running on Netlify without API key - return demo response
+    const isNetlify = process.env.NETLIFY === 'true';
     const geminiKey = process.env.GEMINI_API_KEY;
+    
+    if (isNetlify && (!geminiKey || geminiKey.trim() === '' || geminiKey.includes('your_') || geminiKey.includes('_here'))) {
+      // Return demo response for Netlify without API key
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Demo mode: AI code generation requires GEMINI_API_KEY environment variable',
+          isDemo: true,
+          message: 'Please configure GEMINI_API_KEY in Netlify environment variables to enable AI features'
+        }),
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        }
+      );
+    }
+    
+    // Validate Gemini API key is configured
     if (!geminiKey || geminiKey.trim() === '' || geminiKey.includes('your_') || geminiKey.includes('_here')) {
       logApiError('generate-ai-code-stream', 'Gemini API key not configured', { requiredKey: 'GEMINI_API_KEY' });
       return createErrorResponse(

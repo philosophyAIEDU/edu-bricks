@@ -17,8 +17,9 @@ export const POST = withErrorHandling(async function POST() {
   let sandbox: any = null;
 
   try {
-    // Check for demo mode first
-    const isDemo = process.env.DEMO_MODE === 'true' || !process.env.E2B_API_KEY;
+    // Check for demo mode first - force demo mode on Netlify
+    const isNetlify = process.env.NETLIFY === 'true';
+    const isDemo = process.env.DEMO_MODE === 'true' || !process.env.E2B_API_KEY || isNetlify;
     
     if (isDemo) {
       console.log('[create-ai-sandbox] Demo mode: Creating mock sandbox...');

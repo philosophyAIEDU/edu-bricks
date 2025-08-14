@@ -37,11 +37,11 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ### Netlify (Recommended)
 1. Connect your GitHub repository to Netlify
-2. Set build command: `npm run build`
-3. Set publish directory: `.next`
-4. Add environment variables in Netlify dashboard:
-   - `GEMINI_API_KEY=your_gemini_api_key`
-   - `E2B_API_KEY=your_e2b_api_key` (optional for demo mode)
+2. Build settings are automatically configured via `netlify.toml`
+3. **Important**: Add environment variables in Netlify dashboard (Site settings → Environment variables):
+   - `GEMINI_API_KEY=your_gemini_api_key` (required for AI features)
+   - `E2B_API_KEY=your_e2b_api_key` (optional - demo mode works without this)
+4. Without environment variables, the site runs in demo mode with limited functionality
 
 ### Vercel
 1. Connect your GitHub repository to Vercel
