@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // Optimize for smaller build size
+  experimental: {
+    optimizePackageImports: ['lucide-react', 'react-icons']
+  },
 }
 
 export default nextConfig;
