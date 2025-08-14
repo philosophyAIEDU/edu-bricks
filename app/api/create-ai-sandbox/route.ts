@@ -40,10 +40,12 @@ export const POST = withErrorHandling(async function POST() {
       };
       
       return NextResponse.json({
+        success: true,
         sandboxId: mockSandboxId,
         url: `https://${mockHost}`,
         message: 'Demo sandbox created - AI code generation available, live preview requires E2B setup',
-        isDemo: true
+        isDemo: true,
+        structure: 'Demo project structure:\n├── src/\n│   ├── App.jsx\n│   ├── main.jsx\n│   └── index.css\n├── index.html\n└── package.json'
       });
     }
 
@@ -101,11 +103,13 @@ export const POST = withErrorHandling(async function POST() {
       };
       
       return NextResponse.json({
+        success: true,
         sandboxId: mockSandboxId,
         url: `https://${mockHost}`,
         message: 'Demo mode activated - AI code generation available (E2B sandbox creation failed)',
         isDemo: true,
-        warning: 'Live preview not available - E2B sandbox creation failed'
+        warning: 'Live preview not available - E2B sandbox creation failed',
+        structure: 'Demo project structure:\n├── src/\n│   ├── App.jsx\n│   ├── main.jsx\n│   └── index.css\n├── index.html\n└── package.json'
       });
     }
     

@@ -356,11 +356,30 @@ function AISandboxPageContent() {
     setScreenshotError(null);
     
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+      
       const response = await fetch('/api/create-ai-sandbox', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
+        body: JSON.stringify({}),
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
+      
+      // Handle non-200 responses
+      if (!response.ok) {
+        console.error('[createSandbox] HTTP Error:', response.status, response.statusText);
+        throw new Error(`Server error: ${response.status} ${response.statusText}`);
+      }
+      
+      // Check if response has content
+      const contentLength = response.headers.get('content-length');
+      if (contentLength === '0' || !response.headers.get('content-type')?.includes('application/json')) {
+        console.error('[createSandbox] Empty or invalid response');
+        throw new Error('Server returned empty or invalid response');
+      }
       
       const data = await response.json();
       console.log('[createSandbox] Response data:', data);
@@ -427,6 +446,47 @@ Tip: I automatically detect and install npm packages from your code imports (lik
       }
     } catch (error: any) {
       console.error('[createSandbox] Error:', error);
+      
+      // Handle different types of errors
+      let errorMessage = 'Failed to create sandbox';
+      
+      if (error.name === 'AbortError') {
+        errorMessage = 'Request timeout - server took too long to respond';
+      } else if (error.message?.includes('Server error: 504')) {
+        errorMessage = 'Server timeout - trying demo mode instead';
+        
+        // Fallback to demo mode
+        try {
+          const demoData = {
+            success: true,
+            sandboxId: 'demo-fallback-' + Date.now(),
+            url: 'https://demo.edu-bricks.local',
+            isDemo: true,
+            message: 'Demo mode activated due to server timeout'
+          };
+          
+          setSandboxData(demoData);
+          updateStatus('Demo mode active', true);
+          log('Demo sandbox created (server timeout fallback)');
+          
+          const newParams = new URLSearchParams(searchParams.toString());
+          newParams.set('sandbox', demoData.sandboxId);
+          newParams.set('model', aiModel);
+          router.push(`/?${newParams.toString()}`, { scroll: false });
+          
+          setTimeout(() => {
+            setShowLoadingBackground(false);
+          }, 1000);
+          
+          setLoading(false);
+          return;
+        } catch (demoError) {
+          console.error('[createSandbox] Demo fallback failed:', demoError);
+        }
+      } else if (error.message?.includes('Failed to execute \'json\'')) {
+        errorMessage = 'Server returned invalid response - please try again';
+      }
+      
       updateStatus('Error', false);
       log(`Failed to create sandbox: ${error.message}`, 'error');
       addChatMessage(`Failed to create sandbox: ${error.message}`, 'system');
