@@ -23,6 +23,16 @@ export async function POST(request: NextRequest) {
         error: 'No active sandbox' 
       }, { status: 400 });
     }
+
+    // Check if sandbox is in demo mode
+    if (global.sandboxData?.isDemo) {
+      return NextResponse.json({
+        success: true,
+        output: `Demo mode: Command "${command}" simulated successfully\nDemo output: Command would run in live sandbox`,
+        message: 'Command simulated in demo mode',
+        isDemo: true
+      });
+    }
     
     console.log(`[run-command] Executing: ${command}`);
     
@@ -59,4 +69,17 @@ print(f"\\nReturn code: {result.returncode}")
       error: (error as Error).message 
     }, { status: 500 });
   }
+}
+
+// OPTIONS: Handle CORS preflight requests
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Max-Age': '86400',
+    },
+  });
 }

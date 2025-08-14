@@ -3,8 +3,53 @@
   "buildCommand": "npm run build",
   "installCommand": "npm install",
   "functions": {
-    "app/api/**/*.ts": {
+    "app/api/create-ai-sandbox/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/apply-ai-code-stream/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/generate-ai-code-stream/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/**/route.ts": {
       "maxDuration": 30
     }
+  },
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/:path*"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, PUT, DELETE, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, Authorization"
+        },
+        {
+          "key": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
   }
 }
