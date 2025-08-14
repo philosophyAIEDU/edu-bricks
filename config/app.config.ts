@@ -4,8 +4,8 @@
 export const appConfig = {
   // E2B Sandbox Configuration
   e2b: {
-    // Sandbox timeout in minutes
-    timeoutMinutes: 15,
+    // Sandbox timeout in minutes (reduced for Vercel compatibility)
+    timeoutMinutes: 2,
     
     // Convert to milliseconds for E2B API
     get timeoutMs() {
@@ -15,11 +15,11 @@ export const appConfig = {
     // Vite development server port
     vitePort: 5173,
     
-    // Time to wait for Vite to be ready (in milliseconds)
-    viteStartupDelay: 7000,
+    // Time to wait for Vite to be ready (in milliseconds) - reduced
+    viteStartupDelay: 3000,
     
-    // Time to wait for CSS rebuild (in milliseconds)
-    cssRebuildDelay: 2000,
+    // Time to wait for CSS rebuild (in milliseconds) - reduced
+    cssRebuildDelay: 1000,
     
     // Default sandbox template (if using templates)
     defaultTemplate: undefined, // or specify a template ID
@@ -28,7 +28,7 @@ export const appConfig = {
   // AI Model Configuration
   ai: {
     // Default AI model
-    defaultModel: 'moonshotai/kimi-k2-instruct',
+    defaultModel: 'google/gemini-2.5-pro',
     
     // Available models
     availableModels: [

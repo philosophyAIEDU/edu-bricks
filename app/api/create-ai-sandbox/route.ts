@@ -17,6 +17,35 @@ export const POST = withErrorHandling(async function POST() {
   let sandbox: any = null;
 
   try {
+    // Check for demo mode first
+    const isDemo = process.env.DEMO_MODE === 'true' || !process.env.E2B_API_KEY;
+    
+    if (isDemo) {
+      console.log('[create-ai-sandbox] Demo mode: Creating mock sandbox...');
+      const mockSandboxId = 'demo-' + Date.now().toString();
+      const mockHost = 'demo.edu-bricks.local';
+      
+      // Store mock sandbox data
+      global.activeSandbox = {
+        sandboxId: mockSandboxId,
+        kill: async () => {},
+        getHost: () => mockHost
+      };
+      
+      global.sandboxData = {
+        sandboxId: mockSandboxId,
+        url: `https://${mockHost}`,
+        isDemo: true
+      };
+      
+      return NextResponse.json({
+        sandboxId: mockSandboxId,
+        url: `https://${mockHost}`,
+        message: 'Demo sandbox created - AI code generation available, live preview requires E2B setup',
+        isDemo: true
+      });
+    }
+
     // Validate E2B API key using centralized validation
     const keyValidation = validateE2BApiKey();
     if (!keyValidation.valid) {
@@ -24,7 +53,7 @@ export const POST = withErrorHandling(async function POST() {
       return ErrorResponses.missingEnvVar('E2B_API_KEY');
     }
 
-    console.log('[create-ai-sandbox] Creating base sandbox...');
+    console.log('[create-ai-sandbox] Creating E2B sandbox...');
     
     // Kill existing sandbox if any
     if (global.activeSandbox) {
@@ -44,19 +73,39 @@ export const POST = withErrorHandling(async function POST() {
       global.existingFiles = new Set<string>();
     }
 
-    // Create base sandbox - we'll set up Vite ourselves for full control
-    console.log(`[create-ai-sandbox] Creating base E2B sandbox with ${appConfig.e2b.timeoutMinutes} minute timeout...`);
+    // Create base sandbox with reduced timeout for Vercel
+    console.log(`[create-ai-sandbox] Creating base E2B sandbox with 2 minute timeout...`);
     
     try {
       sandbox = await Sandbox.create({ 
         apiKey: process.env.E2B_API_KEY,
-        timeoutMs: appConfig.e2b.timeoutMs
+        timeoutMs: 120000 // 2 minutes max for Vercel compatibility
       });
     } catch (sandboxError) {
-      logApiError('create-ai-sandbox', sandboxError, { step: 'sandbox-creation' });
-      return ErrorResponses.sandboxCreationFailed(
-        sandboxError instanceof Error ? sandboxError.message : 'Unknown sandbox creation error'
-      );
+      console.log('[create-ai-sandbox] E2B sandbox creation failed, enabling demo mode...');
+      // Fall back to demo mode if E2B fails
+      const mockSandboxId = 'demo-fallback-' + Date.now().toString();
+      const mockHost = 'demo.edu-bricks.local';
+      
+      global.activeSandbox = {
+        sandboxId: mockSandboxId,
+        kill: async () => {},
+        getHost: () => mockHost
+      };
+      
+      global.sandboxData = {
+        sandboxId: mockSandboxId,
+        url: `https://${mockHost}`,
+        isDemo: true
+      };
+      
+      return NextResponse.json({
+        sandboxId: mockSandboxId,
+        url: `https://${mockHost}`,
+        message: 'Demo mode activated - AI code generation available (E2B sandbox creation failed)',
+        isDemo: true,
+        warning: 'Live preview not available - E2B sandbox creation failed'
+      });
     }
     
     const sandboxId = (sandbox as any).sandboxId || Date.now().toString();
