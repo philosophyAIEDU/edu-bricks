@@ -30,20 +30,18 @@ export const appConfig = {
     // Default AI model
     defaultModel: 'google/gemini-2.5-pro',
     
-    // Available models
+    // Available models (Gemini only)
     availableModels: [
-      'openai/gpt-5',
-      'moonshotai/kimi-k2-instruct',
-      'anthropic/claude-sonnet-4-20250514',
-      'google/gemini-2.5-pro'
+      'google/gemini-2.5-pro',
+      'google/gemini-1.5-pro',
+      'google/gemini-1.5-flash'
     ],
     
     // Model display names
     modelDisplayNames: {
-      'openai/gpt-5': 'GPT-5',
-      'moonshotai/kimi-k2-instruct': 'Kimi K2 Instruct',
-      'anthropic/claude-sonnet-4-20250514': 'Sonnet 4',
-      'google/gemini-2.5-pro': 'Gemini 2.5 Pro'
+      'google/gemini-2.5-pro': 'Gemini 2.5 Pro',
+      'google/gemini-1.5-pro': 'Gemini 1.5 Pro',
+      'google/gemini-1.5-flash': 'Gemini 1.5 Flash'
     },
     
     // Temperature settings for non-reasoning models

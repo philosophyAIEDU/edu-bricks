@@ -38,12 +38,25 @@ export async function POST() {
     
   } catch (error) {
     console.error('[kill-sandbox] Error:', error);
-    return NextResponse.json(
+        return NextResponse.json(
       { 
         success: false, 
         error: (error as Error).message 
-      }, 
+      },
       { status: 500 }
     );
   }
+}
+
+// OPTIONS: Handle CORS preflight requests
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Max-Age': '86400',
+    },
+  });
 }

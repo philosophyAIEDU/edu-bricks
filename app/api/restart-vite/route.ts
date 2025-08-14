@@ -12,6 +12,16 @@ export async function POST() {
         error: 'No active sandbox' 
       }, { status: 400 });
     }
+
+    // Check if sandbox is in demo mode
+    if (global.sandboxData?.isDemo) {
+      return NextResponse.json({
+        success: true,
+        message: 'Vite restart simulated in demo mode',
+        output: 'Demo mode: Vite server would be restarted in live sandbox',
+        isDemo: true
+      });
+    }
     
     console.log('[restart-vite] Forcing Vite restart...');
     
@@ -133,4 +143,17 @@ print("Vite is ready")
       error: (error as Error).message 
     }, { status: 500 });
   }
+}
+
+// OPTIONS: Handle CORS preflight requests
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Max-Age': '86400',
+    },
+  });
 }

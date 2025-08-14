@@ -76,14 +76,14 @@ declare global {
 
 export async function POST(request: NextRequest) {
   try {
-    // Validate AI providers are configured
-    const aiValidation = validateAIProviderKeys();
-    if (!aiValidation.valid) {
-      logApiError('generate-ai-code-stream', aiValidation.error, { availableProviders: aiValidation.availableProviders });
+    // Validate Gemini API key is configured
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (!geminiKey || geminiKey.trim() === '' || geminiKey.includes('your_') || geminiKey.includes('_here')) {
+      logApiError('generate-ai-code-stream', 'Gemini API key not configured', { requiredKey: 'GEMINI_API_KEY' });
       return createErrorResponse(
-        `No AI providers configured: ${aiValidation.error}`,
+        'Gemini API key not configured. Please set GEMINI_API_KEY environment variable.',
         503,
-        'AI_PROVIDERS_NOT_CONFIGURED'
+        'GEMINI_API_NOT_CONFIGURED'
       );
     }
 
@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
       return parseResult.error;
     }
     
-    const { prompt, model = 'openai/gpt-oss-20b', context, isEdit = false } = parseResult.data;
+    const { prompt, model = 'google/gemini-2.5-pro', context, isEdit = false } = parseResult.data;
     
     // Validate required parameters
     const validation = validateRequiredParams(parseResult.data, ['prompt']);
@@ -1238,13 +1238,9 @@ CRITICAL: When files are provided in the context:
         const packagesToInstall: string[] = [];
         
         // Determine which provider to use based on model
-        const isAnthropic = model.startsWith('anthropic/');
-        const isGoogle = model.startsWith('google/');
-        const isOpenAI = model.startsWith('openai/gpt-5');
-        const modelProvider = isAnthropic ? anthropic : (isOpenAI ? openai : (isGoogle ? googleGenerativeAI : groq));
-        const actualModel = isAnthropic ? model.replace('anthropic/', '') : 
-                           (model === 'openai/gpt-5') ? 'gpt-5' :
-                           (isGoogle ? model.replace('google/', '') : model);
+        // Force use of Gemini (Google) AI
+        const modelProvider = googleGenerativeAI;
+        const actualModel = model.startsWith('google/') ? model.replace('google/', '') : 'gemini-2.5-pro';
 
         // Prepare streaming options with timeout and error handling
         const streamOptions: any = {
@@ -1884,4 +1880,17 @@ Provide the complete file content without any truncation. Include all necessary 
       'STREAM_INITIALIZATION_FAILED'
     );
   }
+}
+
+// OPTIONS: Handle CORS preflight requests
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Max-Age': '86400',
+    },
+  });
 }
