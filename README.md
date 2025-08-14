@@ -1,15 +1,15 @@
-# Open Lovable
+# Edu Bricks
 
-Chat with AI to build React apps instantly. Made by the [Firecrawl](https://firecrawl.dev/?ref=open-lovable-github) team.
+Chat with AI to build React apps instantly. Made by the [Firecrawl](https://firecrawl.dev/?ref=edu-bricks-github) team.
 
-<img src="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExbmZtaHFleGRsMTNlaWNydGdianI4NGQ4dHhyZjB0d2VkcjRyeXBucCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ZFVLWMa6dVskQX0qu1/giphy.gif" alt="Open Lovable Demo" width="100%"/>
+<img src="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExbmZtaHFleGRsMTNlaWNydGdianI4NGQ4dHhyZjB0d2VkcjRyeXBucCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ZFVLWMa6dVskQX0qu1/giphy.gif" alt="Edu Bricks Demo" width="100%"/>
 
 ## Setup
 
 1. **Clone & Install**
 ```bash
-git clone https://github.com/mendableai/open-lovable.git
-cd open-lovable
+git clone https://github.com/mendableai/edu-bricks.git
+cd edu-bricks
 npm install
 ```
 

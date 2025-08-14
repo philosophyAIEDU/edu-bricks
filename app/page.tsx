@@ -22,6 +22,7 @@ import {
 } from '@/lib/icons';
 import { motion, AnimatePresence } from 'framer-motion';
 import CodeApplicationProgress, { type CodeApplicationState } from '@/components/CodeApplicationProgress';
+import EducationalTemplateSelector from '@/components/EducationalTemplateSelector';
 
 interface SandboxData {
   sandboxId: string;
@@ -51,7 +52,7 @@ export default function AISandboxPage() {
   const [promptInput, setPromptInput] = useState('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
-      content: 'Welcome! I can help you generate code with full context of your sandbox files and structure. Just start chatting - I\'ll automatically create a sandbox for you if needed!\n\nTip: If you see package errors like "react-router-dom not found", just type "npm install" or "check packages" to automatically install missing packages.',
+      content: '🧱 Welcome to Edu-Bricks! 🎓\n\nI\'m your friendly AI assistant ready to build amazing educational apps together! Just like LEGO bricks, we\'ll create learning experiences piece by piece.\n\n🌟 Click the 🎓 button to explore our educational templates:\n• 🧠 Interactive Quizzes\n• 📚 Smart Flashcards\n• 💻 Coding Adventures\n• 🧮 Math Playground\n• 🗣️ Language Learning\n• 🔬 Virtual Science Lab\n\n✨ Each app comes with colorful, kid-friendly designs and engaging interactions!',
       type: 'system',
       timestamp: new Date()
     }
@@ -75,16 +76,17 @@ export default function AISandboxPage() {
   const [homeContextInput, setHomeContextInput] = useState('');
   const [activeTab, setActiveTab] = useState<'generation' | 'preview'>('preview');
   const [showStyleSelector, setShowStyleSelector] = useState(false);
+  const [showEducationalTemplates, setShowEducationalTemplates] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedStyle, setSelectedStyle] = useState<string | null>(null);
   const [showLoadingBackground, setShowLoadingBackground] = useState(false);
-  const [urlScreenshot, setUrlScreenshot] = useState<string | null>(null);
-  const [isCapturingScreenshot, setIsCapturingScreenshot] = useState(false);
-  const [screenshotError, setScreenshotError] = useState<string | null>(null);
   const [isPreparingDesign, setIsPreparingDesign] = useState(false);
-  const [targetUrl, setTargetUrl] = useState<string>('');
   const [loadingStage, setLoadingStage] = useState<'gathering' | 'planning' | 'generating' | null>(null);
   const [sandboxFiles, setSandboxFiles] = useState<Record<string, string>>({});
   const [fileStructure, setFileStructure] = useState<string>('');
+  const [isCapturingScreenshot, setIsCapturingScreenshot] = useState(false);
+  const [screenshotError, setScreenshotError] = useState<string | null>(null);
   
   const [conversationContext, setConversationContext] = useState<{
     scrapedWebsites: Array<{ url: string; content: any; timestamp: Date }>;
@@ -191,16 +193,6 @@ export default function AISandboxPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showHomeScreen]);
   
-  // Start capturing screenshot if URL is provided on mount (from home screen)
-  useEffect(() => {
-    if (!showHomeScreen && homeUrlInput && !urlScreenshot && !isCapturingScreenshot) {
-      let screenshotUrl = homeUrlInput.trim();
-      if (!screenshotUrl.match(/^https?:\/\//i)) {
-        screenshotUrl = 'https://' + screenshotUrl;
-      }
-      captureUrlScreenshot(screenshotUrl);
-    }
-  }, [showHomeScreen, homeUrlInput]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   useEffect(() => {
@@ -957,18 +949,27 @@ Tip: I automatically detect and install npm packages from your code imports (lik
       return (
         /* Generation Tab Content */
         <div className="absolute inset-0 flex overflow-hidden">
-          {/* File Explorer - Hide during edits */}
+          {/* File Explorer - Hide during edits, mobile responsive */}
           {!generationProgress.isEdit && (
-            <div className="w-[250px] border-r border-gray-200 bg-white flex flex-col flex-shrink-0">
+            <div className={`${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} fixed lg:relative left-0 top-0 w-[280px] lg:w-[250px] border-r border-gray-200 bg-white flex flex-col flex-shrink-0 z-30 h-full transition-transform duration-300 ease-in-out`}>
             <div className="p-3 bg-gray-100 text-gray-900 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <BsFolderFill className="w-4 h-4" />
                 <span className="text-sm font-medium">Explorer</span>
               </div>
+              <button
+                onClick={() => setIsSidebarOpen(false)}
+                className="lg:hidden p-1 hover:bg-gray-200 rounded"
+                aria-label="Close file explorer"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
             
             {/* File Tree */}
-            <div className="flex-1 overflow-y-auto p-2 scrollbar-hide">
+            <div className="flex-1 overflow-y-auto p-2 scrollbar-hide mobile-scroll-smooth">
               <div className="text-sm">
                 {/* Root app folder */}
                 <div 
@@ -1338,28 +1339,6 @@ Tip: I automatically detect and install npm packages from your code imports (lik
         </div>
       );
     } else if (activeTab === 'preview') {
-      // Show screenshot when we have one and (loading OR generating OR no sandbox yet)
-      if (urlScreenshot && (loading || generationProgress.isGenerating || !sandboxData?.url || isPreparingDesign)) {
-        return (
-          <div className="relative w-full h-full bg-gray-100">
-            <img 
-              src={urlScreenshot} 
-              alt="Website preview" 
-              className="w-full h-full object-contain"
-            />
-            {(generationProgress.isGenerating || isPreparingDesign) && (
-              <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                <div className="text-center bg-black/70 rounded-lg p-6 backdrop-blur-sm">
-                  <div className="w-12 h-12 border-3 border-gray-300 border-t-white rounded-full animate-spin mx-auto mb-3" />
-                  <p className="text-white text-sm font-medium">
-                    {generationProgress.isGenerating ? 'Generating code...' : `Preparing your design for ${targetUrl}...`}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      }
       
       // Check loading stage FIRST to prevent showing old sandbox
       // Don't show loading overlay for edits
@@ -1393,7 +1372,12 @@ Tip: I automatically detect and install npm packages from your code imports (lik
               ref={iframeRef}
               src={sandboxData.url}
               className="w-full h-full border-none"
-              title="Open Lovable Sandbox"
+              style={{
+                minHeight: '400px',
+                transform: 'scale(1)',
+                transformOrigin: 'top left'
+              }}
+              title="Edu Bricks Sandbox"
               allow="clipboard-write"
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
             />
@@ -1432,12 +1416,7 @@ Tip: I automatically detect and install npm packages from your code imports (lik
       // Default state when no sandbox and no screenshot
       return (
         <div className="flex items-center justify-center h-full bg-gray-50 text-gray-600 text-lg">
-          {screenshotError ? (
-            <div className="text-center">
-              <p className="mb-2">Failed to capture screenshot</p>
-              <p className="text-sm text-gray-500">{screenshotError}</p>
-            </div>
-          ) : sandboxData ? (
+          {sandboxData ? (
             <div className="text-gray-500">
               <div className="w-8 h-8 border-2 border-gray-300 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
               <p className="text-sm">Loading preview...</p>
@@ -1996,9 +1975,6 @@ Tip: I automatically detect and install npm packages from your code imports (lik
     const cleanUrl = url.replace(/^https?:\/\//i, '');
     addChatMessage(`Starting to clone ${cleanUrl}...`, 'system');
     
-    // Capture screenshot immediately and switch to preview tab
-    captureUrlScreenshot(url);
-    
     try {
       addChatMessage('Scraping website content...', 'system');
       const scrapeResponse = await fetch('/api/scrape-url-enhanced', {
@@ -2265,11 +2241,8 @@ Focus on the key sections and content, making it clean and modern while preservi
           status: 'Generation complete!'
         }));
         
-        // Clear screenshot and preparing design states to prevent them from showing on next run
-        setUrlScreenshot(null);
+        // Clear preparing design states to prevent them from showing on next run
         setIsPreparingDesign(false);
-        setTargetUrl('');
-        setScreenshotError(null);
         setLoadingStage(null); // Clear loading stage
         
         setTimeout(() => {
@@ -2285,9 +2258,6 @@ Focus on the key sections and content, making it clean and modern while preservi
       setUrlStatus([]);
       setIsPreparingDesign(false);
       // Clear all states on error
-      setUrlScreenshot(null);
-      setTargetUrl('');
-      setScreenshotError(null);
       setLoadingStage(null);
       setGenerationProgress(prev => ({
         ...prev,
@@ -2301,63 +2271,26 @@ Focus on the key sections and content, making it clean and modern while preservi
     }
   };
 
-  const captureUrlScreenshot = async (url: string) => {
-    setIsCapturingScreenshot(true);
-    setScreenshotError(null);
-    try {
-      const response = await fetch('/api/scrape-screenshot', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url })
-      });
-      
-      const data = await response.json();
-      if (data.success && data.screenshot) {
-        setUrlScreenshot(data.screenshot);
-        // Set preparing design state
-        setIsPreparingDesign(true);
-        // Store the clean URL for display
-        const cleanUrl = url.replace(/^https?:\/\//i, '');
-        setTargetUrl(cleanUrl);
-        // Switch to preview tab to show the screenshot
-        if (activeTab !== 'preview') {
-          setActiveTab('preview');
-        }
-      } else {
-        setScreenshotError(data.error || 'Failed to capture screenshot');
-      }
-    } catch (error) {
-      console.error('Failed to capture screenshot:', error);
-      setScreenshotError('Network error while capturing screenshot');
-    } finally {
-      setIsCapturingScreenshot(false);
-    }
-  };
 
   const handleHomeScreenSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!homeUrlInput.trim()) return;
     
+    // 텍스트 길이 검증
+    const userInput = homeUrlInput.trim();
+    if (userInput.length < 10) {
+      addChatMessage('아이디어 설명이 너무 짧습니다. 좀 더 자세히 설명해주세요.', 'system');
+      return;
+    }
+    
     setHomeScreenFading(true);
     
-    // Clear messages and immediately show the cloning message
+    // Clear messages and immediately show the generation message
     setChatMessages([]);
-    let displayUrl = homeUrlInput.trim();
-    if (!displayUrl.match(/^https?:\/\//i)) {
-      displayUrl = 'https://' + displayUrl;
-    }
-    // Remove protocol for cleaner display
-    const cleanUrl = displayUrl.replace(/^https?:\/\//i, '');
-    addChatMessage(`Starting to clone ${cleanUrl}...`, 'system');
+    addChatMessage(`"${userInput}" 아이디어를 기반으로 앱을 생성하고 있습니다...`, 'system');
     
-    // Start creating sandbox and capturing screenshot immediately in parallel
+    // Start creating sandbox
     const sandboxPromise = !sandboxData ? createSandbox(true) : Promise.resolve();
-    
-    // Only capture screenshot if we don't already have a sandbox (first generation)
-    // After sandbox is set up, skip the screenshot phase for faster generation
-    if (!sandboxData) {
-      captureUrlScreenshot(displayUrl);
-    }
     
     // Set loading stage immediately before hiding home screen
     setLoadingStage('gathering');
@@ -2371,42 +2304,20 @@ Focus on the key sections and content, making it clean and modern while preservi
       // Wait for sandbox to be ready (if it's still creating)
       await sandboxPromise;
       
-      // Now start the clone process which will stream the generation
+      // Now start the generation process which will stream the generation
       setUrlInput(homeUrlInput);
       setUrlOverlayVisible(false); // Make sure overlay is closed
-      setUrlStatus(['Scraping website content...']);
+      setUrlStatus(['사용자 아이디어 분석 중...']);
       
       try {
-        // Scrape the website
-        let url = homeUrlInput.trim();
-        if (!url.match(/^https?:\/\//i)) {
-          url = 'https://' + url;
-        }
+        // 텍스트 아이디어 처리
+        const userIdea = homeUrlInput.trim();
         
-        // Screenshot is already being captured in parallel above
-        
-        const scrapeResponse = await fetch('/api/scrape-url-enhanced', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url })
-        });
-        
-        if (!scrapeResponse.ok) {
-          throw new Error('Failed to scrape website');
-        }
-        
-        const scrapeData = await scrapeResponse.json();
-        
-        if (!scrapeData.success) {
-          throw new Error(scrapeData.error || 'Failed to scrape website');
-        }
-        
-        setUrlStatus(['Website scraped successfully!', 'Generating React app...']);
+        setUrlStatus(['아이디어 분석 완료!', 'React 앱 생성 중...']);
         
         // Clear preparing design state and switch to generation tab
         setIsPreparingDesign(false);
-        setUrlScreenshot(null); // Clear screenshot when starting generation
-        setTargetUrl(''); // Clear target URL
+        // Clear design preparation state
         
         // Update loading stage to planning
         setLoadingStage('planning');
@@ -2417,38 +2328,39 @@ Focus on the key sections and content, making it clean and modern while preservi
           setActiveTab('generation');
         }, 1500);
         
-        // Store scraped data in conversation context
+        // Store user idea in conversation context
         setConversationContext(prev => ({
           ...prev,
-          scrapedWebsites: [...prev.scrapedWebsites, {
-            url: url,
-            content: scrapeData,
+          userIdeas: [...(prev.userIdeas || []), {
+            idea: userIdea,
             timestamp: new Date()
           }],
-          currentProject: `${url} Clone`
+          currentProject: userIdea
         }));
         
-        const prompt = `I want to recreate the ${url} website as a complete React application based on the scraped content below.
+        const prompt = `사용자가 다음과 같은 아이디어로 React 앱을 만들고 싶어합니다:
 
-${JSON.stringify(scrapeData, null, 2)}
+"${userIdea}"
 
-${homeContextInput ? `ADDITIONAL CONTEXT/REQUIREMENTS FROM USER:
+${selectedStyle ? `스타일 요구사항: ${selectedStyle} 스타일로 제작` : ''}
+
+${homeContextInput ? `추가 요구사항:
 ${homeContextInput}
 
-Please incorporate these requirements into the design and implementation.` : ''}
+이 요구사항들을 디자인과 구현에 반영해주세요.` : ''}
 
-IMPORTANT INSTRUCTIONS:
-- Create a COMPLETE, working React application
-- Implement ALL sections and features from the original site
-- Use Tailwind CSS for all styling (no custom CSS files)
-- Make it responsive and modern
-- Ensure all text content matches the original
-- Create proper component structure
-- Make sure the app actually renders visible content
-- Create ALL components that you reference in imports
-${homeContextInput ? '- Apply the user\'s context/theme requirements throughout the application' : ''}
+중요한 지침:
+- 완전히 작동하는 React 애플리케이션 생성
+- 사용자 아이디어에 맞는 모든 기능과 섹션 구현
+- 모든 스타일링에 Tailwind CSS 사용 (별도 CSS 파일 없음)
+- 반응형이고 현대적인 디자인
+- 적절한 컴포넌트 구조 생성
+- 앱이 실제로 시각적 콘텐츠를 렌더링하도록 보장
+- import에서 참조하는 모든 컴포넌트 생성
+${selectedStyle ? `- ${selectedStyle} 스타일을 애플리케이션 전체에 적용` : ''}
+${homeContextInput ? '- 사용자의 추가 요구사항을 애플리케이션 전체에 적용' : ''}
 
-Focus on the key sections and content, making it clean and modern.`;
+핵심 기능과 콘텐츠에 집중하여 깔끔하고 현대적으로 만들어주세요.`;
         
         setGenerationProgress(prev => ({
           isGenerating: true,
@@ -2649,7 +2561,7 @@ Focus on the key sections and content, making it clean and modern.`;
         }));
         
         if (generatedCode) {
-          addChatMessage('AI recreation generated!', 'system');
+          addChatMessage('AI 앱 생성 완료!', 'system');
           
           // Add the explanation to chat if available
           if (explanation && explanation.trim()) {
@@ -2658,15 +2570,15 @@ Focus on the key sections and content, making it clean and modern.`;
           
           setPromptInput(generatedCode);
           
-          // First application for cloned site should not be in edit mode
+          // First application should not be in edit mode
           await applyGeneratedCode(generatedCode, false);
           
           addChatMessage(
-            `Successfully recreated ${url} as a modern React app${homeContextInput ? ` with your requested context: "${homeContextInput}"` : ''}! The scraped content is now in my context, so you can ask me to modify specific sections or add features based on the original site.`, 
+            `"${userIdea}" 아이디어를 바탕으로 현대적인 React 앱을 성공적으로 생성했습니다${selectedStyle ? ` (${selectedStyle} 스타일)` : ''}${homeContextInput ? ` 요청하신 추가 요구사항도 반영했습니다: "${homeContextInput}"` : ''}! 이제 특정 기능을 수정하거나 새로운 기능을 추가하도록 요청하실 수 있습니다.`, 
             'ai',
             {
-              scrapedUrl: url,
-              scrapedContent: scrapeData,
+              userIdea: userIdea,
+              selectedStyle: selectedStyle,
               generatedCode: generatedCode
             }
           );
@@ -2695,11 +2607,8 @@ Focus on the key sections and content, making it clean and modern.`;
           status: 'Generation complete!'
         }));
         
-        // Clear screenshot and preparing design states to prevent them from showing on next run
-        setUrlScreenshot(null);
+        // Clear preparing design states to prevent them from showing on next run
         setIsPreparingDesign(false);
-        setTargetUrl('');
-        setScreenshotError(null);
         setLoadingStage(null); // Clear loading stage
         
         setTimeout(() => {
@@ -2707,7 +2616,7 @@ Focus on the key sections and content, making it clean and modern.`;
           setActiveTab('preview');
         }, 1000); // Show completion briefly then switch
       } catch (error: any) {
-        addChatMessage(`Failed to clone website: ${error.message}`, 'system');
+        addChatMessage(`앱 생성에 실패했습니다: ${error.message}`, 'system');
         setUrlStatus([]);
         setIsPreparingDesign(false);
         // Also clear generation progress on error
@@ -2724,23 +2633,46 @@ Focus on the key sections and content, making it clean and modern.`;
   };
 
   return (
-    <div className="font-sans bg-background text-foreground h-screen flex flex-col">
+    <>
+    <div className="font-sans bg-gradient-to-br from-blue-50 via-yellow-50 to-red-50 text-gray-800 h-screen flex flex-col touch-manipulation">
       {/* Home Screen Overlay */}
       {showHomeScreen && (
         <div className={`fixed inset-0 z-50 transition-opacity duration-500 ${homeScreenFading ? 'opacity-0' : 'opacity-100'}`}>
-          {/* Simple Sun Gradient Background */}
-          <div className="absolute inset-0 bg-white overflow-hidden">
-            {/* Main Sun - Pulsing */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-gradient-radial from-orange-400/50 via-orange-300/30 to-transparent rounded-full blur-[80px] animate-[sunPulse_4s_ease-in-out_infinite]" />
+          {/* LEGO Brick Background */}
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-100 via-yellow-100 via-red-100 to-green-100 overflow-hidden">
+            {/* Floating LEGO Bricks */}
+            <div className="absolute top-20 left-20 w-16 h-10 bg-gradient-to-br from-red-400 to-red-500 rounded-lg shadow-lg animate-bounce" style={{animationDelay: '0s'}}>
+              <div className="flex justify-center pt-1 gap-1">
+                <div className="w-3 h-3 bg-red-300 rounded-full"></div>
+                <div className="w-3 h-3 bg-red-300 rounded-full"></div>
+              </div>
+            </div>
             
-            {/* Inner Sun Core - Brighter */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-gradient-radial from-yellow-300/40 via-orange-400/30 to-transparent rounded-full blur-[40px] animate-[sunPulse_4s_ease-in-out_infinite_0.5s]" />
+            <div className="absolute top-32 right-32 w-20 h-12 bg-gradient-to-br from-blue-400 to-blue-500 rounded-lg shadow-lg animate-bounce" style={{animationDelay: '0.5s'}}>
+              <div className="flex justify-center pt-1 gap-1">
+                <div className="w-3 h-3 bg-blue-300 rounded-full"></div>
+                <div className="w-3 h-3 bg-blue-300 rounded-full"></div>
+                <div className="w-3 h-3 bg-blue-300 rounded-full"></div>
+              </div>
+            </div>
             
-            {/* Outer Glow - Subtle */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1200px] h-[1200px] bg-gradient-radial from-orange-200/20 to-transparent rounded-full blur-[120px]" />
+            <div className="absolute bottom-40 left-40 w-24 h-14 bg-gradient-to-br from-yellow-400 to-yellow-500 rounded-lg shadow-lg animate-bounce" style={{animationDelay: '1s'}}>
+              <div className="flex justify-center pt-1 gap-1">
+                <div className="w-3 h-3 bg-yellow-300 rounded-full"></div>
+                <div className="w-3 h-3 bg-yellow-300 rounded-full"></div>
+                <div className="w-3 h-3 bg-yellow-300 rounded-full"></div>
+                <div className="w-3 h-3 bg-yellow-300 rounded-full"></div>
+              </div>
+            </div>
             
-            {/* Giant Glowing Orb - Center Bottom */}
-            <div className="absolute bottom-0 left-1/2 w-[800px] h-[800px] animate-[orbShrink_3s_ease-out_forwards]" style={{ transform: 'translateX(-50%) translateY(45%)' }}>
+            <div className="absolute bottom-20 right-20 w-16 h-10 bg-gradient-to-br from-green-400 to-green-500 rounded-lg shadow-lg animate-bounce" style={{animationDelay: '1.5s'}}>
+              <div className="flex justify-center pt-1 gap-1">
+                <div className="w-3 h-3 bg-green-300 rounded-full"></div>
+                <div className="w-3 h-3 bg-green-300 rounded-full"></div>
+              </div>
+            </div>
+            {/* Central Building Area */}
+            <div className="absolute bottom-0 left-1/2 w-[600px] h-[400px] animate-[orbShrink_3s_ease-out_forwards]" style={{ transform: 'translateX(-50%) translateY(25%)' }}>
               <div className="relative w-full h-full">
                 <div className="absolute inset-0 bg-orange-600 rounded-full blur-[100px] opacity-30 animate-pulse"></div>
                 <div className="absolute inset-16 bg-orange-500 rounded-full blur-[80px] opacity-40 animate-pulse" style={{ animationDelay: '0.3s' }}></div>
@@ -2773,12 +2705,12 @@ Focus on the key sections and content, making it clean and modern.`;
           {/* Header */}
           <div className="absolute top-0 left-0 right-0 z-20 px-6 py-4 flex items-center justify-between animate-[fadeIn_0.8s_ease-out]">
             <img
-              src="/firecrawl-logo-with-fire.webp"
-              alt="Firecrawl"
-              className="h-8 w-auto"
+              src="/edu-bricks-logo.svg"
+              alt="Edu-Bricks"
+              className="h-10 w-auto"
             />
             <a 
-              href="https://github.com/mendableai/open-lovable" 
+              href="https://github.com/mendableai/edu-bricks" 
               target="_blank" 
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 bg-[#36322F] text-white px-3 py-2 rounded-[10px] text-sm font-medium [box-shadow:inset_0px_-2px_0px_0px_#171310,_0px_1px_6px_0px_rgba(58,_33,_8,_58%)] hover:translate-y-[1px] hover:scale-[0.98] hover:[box-shadow:inset_0px_-1px_0px_0px_#171310,_0px_1px_3px_0px_rgba(58,_33,_8,_40%)] active:translate-y-[2px] active:scale-[0.97] active:[box-shadow:inset_0px_1px_1px_0px_#171310,_0px_1px_2px_0px_rgba(58,_33,_8,_30%)] transition-all duration-200"
@@ -2789,37 +2721,34 @@ Focus on the key sections and content, making it clean and modern.`;
           </div>
           
           {/* Main content */}
-          <div className="relative z-10 h-full flex items-center justify-center px-4">
-            <div className="text-center max-w-4xl min-w-[600px] mx-auto">
+          <div className="relative z-10 h-full flex items-center justify-center px-4 sm:px-6 lg:px-8">
+            <div className="text-center max-w-4xl w-full mx-auto">
               {/* Firecrawl-style Header */}
               <div className="text-center">
-                <h1 className="text-[2.5rem] lg:text-[3.8rem] text-center text-[#36322F] font-semibold tracking-tight leading-[0.9] animate-[fadeIn_0.8s_ease-out]">
-                  <span className="hidden md:inline">Open Lovable</span>
-                  <span className="md:hidden">Open Lovable</span>
+                <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-[3.8rem] text-center text-[#36322F] font-semibold tracking-tight leading-tight sm:leading-[0.9] animate-[fadeIn_0.8s_ease-out]">
+                  AI로 앱을 만들어보세요
                 </h1>
                 <motion.p 
-                  className="text-base lg:text-lg max-w-lg mx-auto mt-2.5 text-zinc-500 text-center text-balance"
+                  className="text-sm sm:text-base lg:text-lg max-w-lg mx-auto mt-2.5 text-zinc-500 text-center text-balance px-4"
                   animate={{
                     opacity: showStyleSelector ? 0.7 : 1
                   }}
                   transition={{ duration: 0.3, ease: "easeOut" }}
                 >
-                  Re-imagine any website, in seconds.
+                  만들고 싶은 앱을 설명해주세요
                 </motion.p>
               </div>
               
-              <form onSubmit={handleHomeScreenSubmit} className="mt-5 max-w-3xl mx-auto">
+              <form onSubmit={handleHomeScreenSubmit} className="mt-5 max-w-3xl mx-auto px-4" data-home-screen="true">
                 <div className="w-full relative group">
-                  <input
-                    type="text"
+                  <textarea
                     value={homeUrlInput}
                     onChange={(e) => {
                       const value = e.target.value;
                       setHomeUrlInput(value);
                       
-                      // Check if it's a valid domain
-                      const domainRegex = /^(https?:\/\/)?(([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,})(\/?.*)?$/;
-                      if (domainRegex.test(value) && value.length > 5) {
+                      // Show style selector if there's meaningful content
+                      if (value.trim().length > 10) {
                         // Small delay to make the animation feel smoother
                         setTimeout(() => setShowStyleSelector(true), 100);
                       } else {
@@ -2827,30 +2756,19 @@ Focus on the key sections and content, making it clean and modern.`;
                         setSelectedStyle(null);
                       }
                     }}
-                    placeholder=" "
-                    aria-placeholder="https://firecrawl.dev"
-                    className="h-[3.25rem] w-full resize-none focus-visible:outline-none focus-visible:ring-orange-500 focus-visible:ring-2 rounded-[18px] text-sm text-[#36322F] px-4 pr-12 border-[.75px] border-border bg-white"
+                    placeholder="영어 단어 암기 앱을 만들어주세요. 단어장 기능과 퀴즈 기능이 있었으면 좋겠어요."
+                    className="min-h-[5rem] h-auto w-full resize-none focus-visible:outline-none focus-visible:ring-orange-500 focus-visible:ring-2 rounded-[18px] text-sm sm:text-base text-[#36322F] px-4 py-3 pr-12 border-[.75px] border-border bg-white"
                     style={{
                       boxShadow: '0 0 0 1px #e3e1de66, 0 1px 2px #5f4a2e14, 0 4px 6px #5f4a2e0a, 0 40px 40px -24px #684b2514',
                       filter: 'drop-shadow(rgba(249, 224, 184, 0.3) -0.731317px -0.731317px 35.6517px)'
                     }}
                     autoFocus
                   />
-                  <div 
-                    aria-hidden="true" 
-                    className={`absolute top-1/2 -translate-y-1/2 left-4 pointer-events-none text-sm text-opacity-50 text-start transition-opacity ${
-                      homeUrlInput ? 'opacity-0' : 'opacity-100'
-                    }`}
-                  >
-                    <span className="text-[#605A57]/50" style={{ fontFamily: 'monospace' }}>
-                      https://firecrawl.dev
-                    </span>
-                  </div>
                   <button
                     type="submit"
                     disabled={!homeUrlInput.trim()}
                     className="absolute top-1/2 transform -translate-y-1/2 right-2 flex h-10 items-center justify-center rounded-md px-3 text-sm font-medium text-zinc-500 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    title={selectedStyle ? `Clone with ${selectedStyle} Style` : 'Clone Website'}
+                    title={selectedStyle ? `${selectedStyle} 스타일로 앱 생성` : '앱 생성하기'}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
                       <polyline points="9 10 4 15 9 20"></polyline>
@@ -2866,17 +2784,17 @@ Focus on the key sections and content, making it clean and modern.`;
                         showStyleSelector ? 'translate-y-0 opacity-100' : '-translate-y-4 opacity-0'
                       }`}>
                     <div className="bg-white/80 backdrop-blur-sm border border-gray-200 rounded-xl p-4 shadow-sm">
-                      <p className="text-sm text-gray-600 mb-3 font-medium">How do you want your site to look?</p>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      <p className="text-sm text-gray-600 mb-3 font-medium">어떤 스타일의 앱을 원하시나요?</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                         {[
-                          { name: 'Neobrutalist', description: 'Bold colors, thick borders' },
-                          { name: 'Glassmorphism', description: 'Frosted glass effects' },
-                          { name: 'Minimalist', description: 'Clean and simple' },
-                          { name: 'Dark Mode', description: 'Dark theme' },
-                          { name: 'Gradient', description: 'Colorful gradients' },
-                          { name: 'Retro', description: '80s/90s aesthetic' },
-                          { name: 'Modern', description: 'Contemporary design' },
-                          { name: 'Monochrome', description: 'Black and white' }
+                          { name: 'Neobrutalist', description: '밝고 활기찬 색상' },
+                          { name: 'Glassmorphism', description: '부드러운 글래스 효과' },
+                          { name: 'Minimalist', description: '깔끔하고 심플한' },
+                          { name: 'Dark Mode', description: '눈에 편한 다크 테마' },
+                          { name: 'Gradient', description: '화려한 그라데이션' },
+                          { name: 'Retro', description: '레트로 감성' },
+                          { name: 'Modern', description: '현대적이고 세련된' },
+                          { name: 'Monochrome', description: '모노톤 스타일' }
                         ].map((style) => (
                           <button
                             key={style.name}
@@ -2946,8 +2864,8 @@ Focus on the key sections and content, making it clean and modern.`;
                               }
                             }
                           }}
-                          placeholder="Add more details: specific features, color preferences..."
-                          className="w-full px-4 py-2 text-sm bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100 transition-all duration-200"
+                          placeholder="추가 기능: 진행률 표시, 음성 발음, 난이도 조절..."
+                          className="w-full px-4 py-2 text-sm sm:text-base bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100 transition-all duration-200"
                         />
                       </div>
                     </div>
@@ -2987,15 +2905,15 @@ Focus on the key sections and content, making it clean and modern.`;
         </div>
       )}
       
-      <div className="bg-card px-4 py-4 border-b border-border flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className="bg-white/90 backdrop-blur-sm px-4 py-3 sm:py-4 border-b-4 border-yellow-400 flex items-center justify-between shadow-lg">
+        <div className="flex items-center gap-2 sm:gap-4">
           <img
-            src="/firecrawl-logo-with-fire.webp"
-            alt="Firecrawl"
-            className="h-8 w-auto"
+            src="/edu-bricks-logo.svg"
+            alt="Edu-Bricks"
+            className="h-8 sm:h-10 w-auto"
           />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
           {/* Model Selector - Left side */}
           <select
             value={aiModel}
@@ -3009,7 +2927,7 @@ Focus on the key sections and content, making it clean and modern.`;
               }
               router.push(`/?${params.toString()}`);
             }}
-            className="px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-[10px] focus:outline-none focus:ring-2 focus:ring-[#36322F] focus:border-transparent"
+            className="px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm bg-white border border-gray-300 rounded-[10px] focus:outline-none focus:ring-2 focus:ring-[#36322F] focus:border-transparent"
           >
             {appConfig.ai.availableModels.map(model => (
               <option key={model} value={model}>
@@ -3017,6 +2935,15 @@ Focus on the key sections and content, making it clean and modern.`;
               </option>
             ))}
           </select>
+          <Button 
+            variant="code"
+            onClick={() => setShowEducationalTemplates(true)}
+            size="sm"
+            title="Educational Templates"
+            className="bg-gradient-to-r from-red-400 to-red-500 hover:from-red-500 hover:to-red-600 text-white shadow-lg border-2 border-red-600 transform hover:scale-105 transition-all duration-200"
+          >
+            🎓
+          </Button>
           <Button 
             variant="code"
             onClick={() => createSandbox()}
@@ -3056,9 +2983,34 @@ Focus on the key sections and content, making it clean and modern.`;
         </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Mobile Menu Toggle Button */}
+        <button
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className="md:hidden fixed top-20 left-4 z-50 bg-[#36322F] text-white p-2 rounded-lg shadow-lg touch-manipulation tap-highlight-transparent select-none-touch"
+          aria-label="Toggle mobile menu"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            {isMobileMenuOpen ? (
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            ) : (
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            )}
+          </svg>
+        </button>
+
         {/* Center Panel - AI Chat (1/3 of remaining width) */}
-        <div className="flex-1 max-w-[400px] flex flex-col border-r border-border bg-background">
+        <div className={`${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'} fixed md:relative left-0 top-0 w-full md:w-auto md:flex-1 md:max-w-[400px] flex flex-col border-r border-border bg-background z-40 h-full md:h-auto transition-transform duration-300 ease-in-out`}>
+          {/* Mobile Close Button */}
+          <button
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="md:hidden absolute top-4 right-4 z-50 bg-gray-200 hover:bg-gray-300 p-2 rounded-lg"
+            aria-label="Close chat"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
           {conversationContext.scrapedWebsites.length > 0 && (
             <div className="p-4 bg-card">
               <div className="flex flex-col gap-2">
@@ -3095,7 +3047,7 @@ Focus on the key sections and content, making it clean and modern.`;
             </div>
           )}
 
-          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-1 scrollbar-hide" ref={chatMessagesRef}>
+          <div className="flex-1 overflow-y-auto p-3 sm:p-4 flex flex-col gap-1 scrollbar-hide mobile-scroll-smooth" ref={chatMessagesRef}>
             {chatMessages.map((msg, idx) => {
               // Check if this message is from a successful generation
               const isGenerationComplete = msg.content.includes('Successfully recreated') || 
@@ -3109,7 +3061,7 @@ Focus on the key sections and content, making it clean and modern.`;
                 <div key={idx} className="block">
                   <div className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'} mb-1`}>
                     <div className="block">
-                      <div className={`block rounded-[10px] px-4 py-2 ${
+                      <div className={`block rounded-[10px] px-3 sm:px-4 py-2 text-sm sm:text-base ${
                         msg.type === 'user' ? 'bg-[#36322F] text-white ml-auto max-w-[80%]' :
                         msg.type === 'ai' ? 'bg-gray-100 text-gray-900 mr-auto max-w-[80%]' :
                         msg.type === 'system' ? 'bg-[#36322F] text-white text-sm' :
@@ -3293,11 +3245,11 @@ Focus on the key sections and content, making it clean and modern.`;
             )}
           </div>
 
-          <div className="p-4 border-t border-border bg-card">
+          <div className="p-3 sm:p-4 border-t border-border bg-card">
             <div className="relative">
               <Textarea
-                className="min-h-[60px] pr-12 resize-y border-2 border-black focus:outline-none"
-                placeholder=""
+                className="min-h-[60px] pr-12 resize-y border-2 border-black focus:outline-none text-sm sm:text-base"
+                placeholder="Ask AI to help build your app..."
                 value={aiChatInput}
                 onChange={(e) => setAiChatInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -3306,14 +3258,14 @@ Focus on the key sections and content, making it clean and modern.`;
                     sendChatMessage();
                   }
                 }}
-                rows={3}
+                rows={2}
               />
               <button
                 onClick={sendChatMessage}
-                className="absolute right-2 bottom-2 p-2 bg-[#36322F] text-white rounded-[10px] hover:bg-[#4a4542] [box-shadow:inset_0px_-2px_0px_0px_#171310,_0px_1px_6px_0px_rgba(58,_33,_8,_58%)] hover:translate-y-[1px] hover:scale-[0.98] hover:[box-shadow:inset_0px_-1px_0px_0px_#171310,_0px_1px_3px_0px_rgba(58,_33,_8,_40%)] active:translate-y-[2px] active:scale-[0.97] active:[box-shadow:inset_0px_1px_1px_0px_#171310,_0px_1px_2px_0px_rgba(58,_33,_8,_30%)] transition-all duration-200"
+                className="absolute right-2 bottom-2 p-1.5 sm:p-2 bg-[#36322F] text-white rounded-[10px] hover:bg-[#4a4542] [box-shadow:inset_0px_-2px_0px_0px_#171310,_0px_1px_6px_0px_rgba(58,_33,_8,_58%)] hover:translate-y-[1px] hover:scale-[0.98] hover:[box-shadow:inset_0px_-1px_0px_0px_#171310,_0px_1px_3px_0px_rgba(58,_33,_8,_40%)] active:translate-y-[2px] active:scale-[0.97] active:[box-shadow:inset_0px_1px_1px_0px_#171310,_0px_1px_2px_0px_rgba(58,_33,_8,_30%)] transition-all duration-200 min-h-[44px] min-w-[44px] flex items-center justify-center touch-manipulation tap-highlight-transparent select-none-touch"
                 title="Send message (Enter)"
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
                 </svg>
               </button>
@@ -3323,32 +3275,45 @@ Focus on the key sections and content, making it clean and modern.`;
 
         {/* Right Panel - Preview or Generation (2/3 of remaining width) */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="px-4 py-2 bg-card border-b border-border flex justify-between items-center">
-            <div className="flex items-center gap-4">
+          <div className="px-3 sm:px-4 py-2 bg-card border-b border-border flex justify-between items-center">
+            <div className="flex items-center gap-2 sm:gap-4">
+              {/* Sidebar toggle for file explorer */}
+              {activeTab === 'generation' && !generationProgress.isEdit && (
+                <button
+                  onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                  className="lg:hidden p-1.5 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors"
+                  aria-label="Toggle file explorer"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2" />
+                  </svg>
+                </button>
+              )}
               <div className="flex bg-[#36322F] rounded-lg p-1">
                 <button
                   onClick={() => setActiveTab('generation')}
-                  className={`p-2 rounded-md transition-all ${
+                  className={`p-1.5 sm:p-2 rounded-md transition-all min-h-[44px] min-w-[44px] flex items-center justify-center ${
                     activeTab === 'generation' 
                       ? 'bg-black text-white' 
                       : 'text-gray-300 hover:text-white hover:bg-gray-700'
                   }`}
                   title="Code"
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                   </svg>
                 </button>
                 <button
                   onClick={() => setActiveTab('preview')}
-                  className={`p-2 rounded-md transition-all ${
+                  className={`p-1.5 sm:p-2 rounded-md transition-all min-h-[44px] min-w-[44px] flex items-center justify-center ${
                     activeTab === 'preview' 
                       ? 'bg-black text-white' 
                       : 'text-gray-300 hover:text-white hover:bg-gray-700'
                   }`}
                   title="Preview"
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                   </svg>
@@ -3402,6 +3367,17 @@ Focus on the key sections and content, making it clean and modern.`;
             </div>
           </div>
           <div className="flex-1 relative overflow-hidden">
+            {/* Mobile overlay when sidebar is open */}
+            {(isMobileMenuOpen || isSidebarOpen) && (
+              <div
+                className="fixed inset-0 bg-black bg-opacity-50 z-20 lg:hidden"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  setIsSidebarOpen(false);
+                }}
+                aria-label="Close overlay"
+              />
+            )}
             {renderMainContent()}
           </div>
         </div>
@@ -3411,5 +3387,26 @@ Focus on the key sections and content, making it clean and modern.`;
 
 
     </div>
+    
+      {/* Educational Template Selector Modal */}
+      {showEducationalTemplates && (
+        <EducationalTemplateSelector
+          onTemplateSelect={(prompt) => {
+            setAiChatInput(prompt);
+            setTimeout(() => {
+              // Simulate form submission for AI chat
+              const event = new Event('submit', { bubbles: true, cancelable: true });
+              const aiChatForm = document.querySelector('form') as HTMLFormElement;
+              if (aiChatForm) {
+                aiChatForm.dispatchEvent(event);
+              }
+              // Alternative: directly call AI generation
+              handleAIResponse();
+            }, 100);
+          }}
+          onClose={() => setShowEducationalTemplates(false)}
+        />
+      )}
+    </>
   );
 }

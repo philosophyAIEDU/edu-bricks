@@ -5,8 +5,9 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Open Lovable",
-  description: "Re-imagine any website in seconds with AI-powered website builder.",
+  title: "Edu Bricks",
+  description: "Re-imagine any website in seconds with AI-powered educational website builder.",
+  viewport: "width=device-width, initial-scale=1, shrink-to-fit=no",
 };
 
 export default function RootLayout({
