@@ -1,0 +1,7 @@
+app/api/apply-ai-code-stream/route.ts
+app/api/generate-ai-code-stream/route.ts
+app/api/install-packages/route.ts
+app/api/kill-sandbox/route.ts
+app/api/restart-vite/route.ts
+app/api/sandbox-status/route.ts
+config/app.config.ts
